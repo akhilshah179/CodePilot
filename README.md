@@ -12,6 +12,7 @@
 [![SQLite](https://img.shields.io/badge/SQLite-node:sqlite-003B57?style=flat&logo=sqlite&logoColor=white)](https://nodejs.org/api/sqlite.html)
 [![Three.js](https://img.shields.io/badge/Three.js-R3F-black?style=flat&logo=threedotjs&logoColor=white)](https://threejs.org/)
 [![Tests](https://img.shields.io/badge/Tests-155%20Passing-success?style=flat&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![CI](https://github.com/akhilshah179/CodePilot/actions/workflows/ci.yml/badge.svg)](https://github.com/akhilshah179/CodePilot/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](LICENSE)
 
 [Overview](#project-overview) • [Architecture](#system-architecture) • [Wireframe Intelligence](#wireframe-and-dependency-intelligence) • [Automation Engine](#automation-engine) • [Technology Intelligence](#technology-intelligence) • [Collective Intelligence](#collective-intelligence) • [API Reference](#api-architecture) • [Local Setup](#getting-started)
