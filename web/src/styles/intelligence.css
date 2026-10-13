@@ -1,0 +1,295 @@
+/* Technology Intelligence ----------------------------------------------------------------------- */
+.intel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.intel.with-inspector {
+  grid-template-columns: minmax(0, 1fr) 520px;
+}
+.intel-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 16px 0;
+  gap: 10px;
+}
+.intel-main > * {
+  flex-shrink: 0;
+}
+.intel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.intel-head h2 {
+  margin: 0 0 2px;
+  font-size: 16px;
+}
+.intel-head .mono {
+  font-size: 11.5px;
+}
+.intel-counts {
+  display: flex;
+  gap: 14px;
+  margin: 0;
+}
+.intel-counts > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.intel-counts dd {
+  margin: 0;
+  font-size: 15px;
+}
+.intel-rule {
+  margin: 0;
+  max-width: 900px;
+}
+.intel-toolbar .segmented button {
+  padding: 0 10px;
+}
+.intel-scroll {
+  flex: 1 1 auto !important;
+  flex-shrink: 1 !important;
+}
+.intel-table tbody tr {
+  cursor: pointer;
+}
+.intel-table .tm-name {
+  font-weight: 600;
+}
+.intel-table .tm-role {
+  max-width: 460px;
+}
+.tm-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* Inspector */
+.intel-inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.intel-sec {
+  display: grid;
+  gap: 8px;
+}
+.intel-sec h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.intel-sec h4 {
+  margin: 4px 0 0;
+  font: 500 11px var(--font-ui);
+  color: var(--text-3);
+}
+.intel-sec p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.intel-cite {
+  font-size: 11px !important;
+  color: var(--text-3) !important;
+}
+.intel-cite a {
+  color: var(--data);
+  text-decoration: none;
+}
+.intel-ops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.intel-ops li {
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.intel-list,
+.intel-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.intel-list li {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.intel-list li .link-btn {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  white-space: normal;
+}
+.intel-list a,
+.intel-files a {
+  color: var(--data);
+  text-decoration: none;
+}
+.intel-fn {
+  color: var(--text);
+}
+.intel-files li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  font-size: 11.5px;
+}
+.intel-files .intel-uses {
+  grid-column: 1;
+  grid-row: 2;
+}
+.intel-files .icon-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.intel-files a {
+  overflow-wrap: anywhere;
+}
+.intel-files .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+.si-conn.as-row {
+  cursor: default;
+}
+.intel-conf {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.intel-conf > div {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.intel-conf dt {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.intel-conf dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Focused relationship graph */
+.fg {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-inset);
+}
+.fg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.fg-layer {
+  fill: var(--text-3);
+  font: 600 8.5px var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fg-node rect {
+  fill: #151914;
+  stroke: rgba(255, 255, 255, 0.16);
+}
+.fg-node text {
+  fill: var(--text-2);
+  font: 500 11px var(--font-ui);
+}
+.fg-node.is-focus rect {
+  fill: rgba(255, 176, 32, 0.12);
+  stroke: var(--accent);
+}
+.fg-node.is-focus text {
+  fill: var(--text);
+  font-weight: 600;
+}
+.fg figcaption {
+  margin-top: 6px;
+}
+
+@media (max-width: 1200px) {
+  .intel.with-inspector {
+    grid-template-columns: minmax(0, 1fr) 440px;
+  }
+}
+@media (max-width: 900px) {
+  .intel,
+  .intel.with-inspector {
+    display: block;
+    overflow: auto;
+  }
+  .intel-main {
+    min-height: 60vh;
+  }
+  .intel-scroll {
+    max-height: 60vh;
+  }
+  .intel-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .intel-table th:nth-child(2),
+  .intel-table td:nth-child(2),
+  .intel-table td:nth-child(3),
+  .intel-table th:nth-child(3),
+  .intel-table td:nth-child(5),
+  .intel-table th:nth-child(5) {
+    display: none;
+  }
+}
+
+/* Four project tabs: scroll horizontally rather than clip on narrow screens. */
+.view-tabs [role='tablist'] {
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+.view-tabs [role='tablist']::-webkit-scrollbar {
+  display: none;
+}
+.view-tabs [role='tablist'] button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.intel-counts {
+  flex-wrap: wrap;
+}

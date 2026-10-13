@@ -1,0 +1,6 @@
+{
+  "name": "notifier",
+  "private": true,
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "kafkajs": "2.2.4", "nodemailer": "6.9.13" }
+}

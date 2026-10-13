@@ -1,0 +1,32 @@
+{
+  "name": "@codepilot/analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./layout": "./src/layout.ts",
+    "./cluster": "./src/cluster.ts",
+    "./svg": "./src/svg.ts",
+    "./types": "./src/types.ts",
+    "./shapes": "./src/shapes.ts",
+    "./architecture": "./src/architecture/index.ts",
+    "./architecture/types": "./src/architecture/types.ts",
+    "./architecture/flows": "./src/architecture/flows.ts",
+    "./architecture/layout": "./src/architecture/layout.ts",
+    "./architecture/render": "./src/architecture/render.ts",
+    "./architecture/icons": "./src/architecture/icons.ts",
+    "./architecture/relations": "./src/architecture/relations.ts"
+  },
+  "dependencies": {
+    "d3-force": "^3.0.0",
+    "picomatch": "^4.0.7",
+    "smol-toml": "^1.9.0",
+    "typescript": "~6.0.2",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/picomatch": "^4.0.2"
+  }
+}

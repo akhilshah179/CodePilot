@@ -1,0 +1,27 @@
+{
+  "name": "codepilot",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c yellow,blue \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm run build -w web",
+    "start": "npm start -w server",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/analyzer && tsc -p server && tsc -p web",
+    "hero:snapshot": "tsx scripts/hero-snapshot.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.2",
+    "vitest": "^5.0.2",
+    "@types/node": "^24.13.3",
+    "jsdom": "^30.1.1"
+  }
+}

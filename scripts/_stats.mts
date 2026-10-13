@@ -1,0 +1,12 @@
+import { analyzeRepository } from '../packages/analyzer/src/index.ts';
+const t0 = performance.now();
+const g = await analyzeRepository(process.argv[2]);
+console.log('ms', Math.round(performance.now() - t0), 'nodes', g.nodes.length, 'edges', g.edges.length);
+console.log(JSON.stringify(g.summary.totals), JSON.stringify(g.summary.countsByType));
+console.log('frameworks', g.frameworks, 'warnings', g.warnings);
+const unresolved = g.edges.filter(e => !e.resolved);
+const byReason = new Map<string, number>();
+for (const e of unresolved) byReason.set(e.specifier + ' :: ' + e.unresolved_reason, (byReason.get(e.specifier + ' :: ' + e.unresolved_reason) ?? 0) + 1);
+console.log('unresolved sample', [...byReason].slice(0, 12));
+console.log('entry', g.summary.entryPoints.slice(0, 8).map(e => e.id + ' <- ' + e.reasons.join('; ')));
+console.log('cycles', g.summary.cycles.length, 'orphans', g.summary.orphans.length, g.summary.orphans.slice(0,8).map(o=>o.id));

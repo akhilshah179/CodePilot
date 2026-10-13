@@ -1,0 +1,18 @@
+{
+  "name": "fixture-app",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "main": "src/main.ts",
+  "scripts": {
+    "dev": "vite",
+    "serve": "tsx src/server.ts"
+  },
+  "imports": {
+    "#internal/*": "./src/services/*.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "react": "^18.3.0",
+    "vite": "^5.0.0"
+  }
+}

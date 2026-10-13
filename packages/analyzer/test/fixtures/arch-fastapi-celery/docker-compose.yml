@@ -1,0 +1,33 @@
+services:
+  api:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://app@db:5432/app
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - PRICING_API_URL=https://pricing.example.net
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: ./backend
+    command: celery -A app.worker worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://app@db:5432/app
+      - CELERY_BROKER_URL=redis://redis:6379/1
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7.2-alpine
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: supersecret
+    ports:
+      - "5432:5432"

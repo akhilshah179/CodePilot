@@ -1,0 +1,6 @@
+{
+  "name": "orders",
+  "private": true,
+  "scripts": { "start": "node src/server.js" },
+  "dependencies": { "express": "4.19.2", "kafkajs": "2.2.4" }
+}

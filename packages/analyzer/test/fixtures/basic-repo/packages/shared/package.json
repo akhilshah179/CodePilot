@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/shared",
+  "exports": {
+    ".": { "default": "./dist/index.js", "source": "./src/index.ts" },
+    "./tokens": "./src/tokens.ts"
+  }
+}

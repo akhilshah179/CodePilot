@@ -1,0 +1,361 @@
+/* Sign-in and onboarding ---------------------------------------------------------- */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.auth-header {
+  padding: 16px var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.auth-main {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 40px 16px 64px;
+  display: grid;
+  gap: 18px;
+}
+.auth-main h1 {
+  font-size: 28px;
+}
+.auth-buttons {
+  display: grid;
+  gap: 10px;
+}
+.auth-buttons .btn {
+  width: 100%;
+}
+.dev-signin {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-strong);
+}
+.auth-facts {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.auth-facts dt {
+  font-weight: 600;
+}
+.auth-facts dd {
+  margin: 2px 0 0;
+  color: var(--text-2);
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.steps li[aria-current='step'] {
+  color: var(--accent);
+}
+.steps li[data-done] {
+  color: var(--text-2);
+}
+
+.onboarding {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px var(--gutter) 64px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+.narrow-onboarding {
+  max-width: 880px;
+}
+.onboarding h1 {
+  font-size: 28px;
+}
+.onboarding-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.onboarding-head p {
+  margin-top: 6px;
+}
+
+.repo-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 240px) auto;
+  gap: 8px;
+}
+.repo-table ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.repo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) 110px 90px 100px minmax(120px, 1.3fr) 110px;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.repo-row:hover {
+  background: var(--bg-raised);
+}
+.repo-row-head {
+  font-size: 12px;
+  color: var(--text-3);
+  border-bottom-color: var(--line-strong);
+}
+.repo-row-head:hover {
+  background: none;
+}
+.repo-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+}
+.repo-name strong {
+  font-weight: 500;
+}
+.repo-desc {
+  flex-basis: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-action {
+  justify-self: end;
+}
+.repo-empty {
+  padding: 24px 4px;
+}
+.status-ok {
+  color: var(--text);
+}
+.status-risk {
+  color: #ff8a80;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pager .spacer {
+  flex: 1;
+}
+
+.back-link {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.back-link:hover {
+  color: var(--text);
+}
+.confirm-title {
+  font-size: 26px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.confirm-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 16px;
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.scope-list {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 12px;
+}
+.scope-list dt {
+  font-size: 13px;
+  font-weight: 600;
+}
+.scope-list dd {
+  margin: 3px 0 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.scope-list ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+.panel h2 {
+  font-size: 15px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  grid-template-areas: 'stages preview' 'counters preview';
+  gap: 16px;
+}
+.analysis-grid > :nth-child(1) {
+  grid-area: stages;
+}
+.analysis-grid > :nth-child(2) {
+  grid-area: counters;
+}
+.analysis-grid > :nth-child(3) {
+  grid-area: preview;
+}
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.stages li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  color: var(--text-3);
+  font-size: 14px;
+}
+.stages li .mono {
+  margin-left: auto;
+}
+.stage-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  flex: none;
+}
+.stages li[data-state='done'] {
+  color: var(--text-2);
+}
+.stages li[data-state='done'] .stage-marker {
+  background: var(--text-2);
+  border-color: var(--text-2);
+}
+.stages li[data-state='active'] {
+  color: var(--text);
+}
+.stages li[data-state='active'] .stage-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.stages li[data-state='failed'] {
+  color: #ff8a80;
+}
+.stages li[data-state='failed'] .stage-marker {
+  border-color: var(--risk);
+  background: var(--risk);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.progress {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms linear;
+}
+.counters {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.counters > div {
+  display: grid;
+  gap: 2px;
+}
+.counter-value {
+  font-size: clamp(20px, 2.6vw, 28px);
+  color: var(--text);
+}
+.counter-label {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.preview-panel {
+  padding: 0;
+  overflow: hidden;
+}
+.preview-panel p {
+  padding: 0 14px 12px;
+}
+.live-preview {
+  width: 100%;
+  height: 340px;
+  display: block;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (max-width: 800px) {
+  .repo-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .repo-row > :nth-child(2),
+  .repo-row > :nth-child(4),
+  .repo-row > :nth-child(5) {
+    display: none;
+  }
+  .repo-row > :nth-child(3) {
+    display: none;
+  }
+  .repo-row-head {
+    display: none;
+  }
+  .repo-controls {
+    grid-template-columns: 1fr;
+  }
+  .confirm-grid,
+  .analysis-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'stages' 'counters' 'preview';
+  }
+  .live-preview {
+    height: 260px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stages li[data-state='active'] .stage-marker {
+    animation: none;
+  }
+  .progress span {
+    transition: none;
+  }
+}

@@ -1,0 +1,5 @@
+{
+  // Solution-style config: the real options live in tsconfig.app.json
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }]
+}
