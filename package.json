@@ -17,7 +17,7 @@
     "hero:snapshot": "tsx scripts/hero-snapshot.ts"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5",
+    "concurrently": "^10.0.6",
     "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vitest": "^5.0.2",
