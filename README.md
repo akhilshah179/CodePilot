@@ -50,65 +50,25 @@ Project Home with three views:
   snapshot (commit) and regenerated whenever the repository is re-analyzed. Links to the
   Wireframe, the system map, request flows, files and evidence.
   - Exports: PNG / SVG / PDF one-pager / Mermaid / JSON.
-- **Automation** — *how this project actually works, in at most four main flows.* The engine
-  traces every entry point (route, queue, schedule, UI action) and groups them into
-  capabilities. It then picks one flow per cycle: **access** (sign-in), **core action**, **data**
-  (read or browse) and **background / integration**. A flow is only stitched to another (a route
-  to the worker it enqueues) when the code links them. Near-duplicates fold into
-  "+N similar endpoints". Slots are never padded, so a small project shows fewer flows.
-
-  The summary line reads "*project* · N main flows · covers A of B entry points". It expands to
-  the shown, folded and omitted lists, and those always add up to B. Each card gives the flow's
-  name (actor + verb + object, e.g. "User pays order"), purpose, step count, tools and
-  confidence. Owners can rename a flow or swap it for another candidate, and the choice is
-  stored per project.
-
-  The canvas is a real flowchart: a trigger pill, then UI, HTTP, server, decision diamonds
-  (only where branches lead to different outcomes), data stores, external services, async jobs
-  and end pills. Frontend, backend and external swimlanes are drawn only when used, and every
-  node carries file:line evidence. It supports:
-  - Pan, ctrl/⌘ + scroll zoom to the cursor, pinch, and double-click to zoom or fit.
-  - Keyboard: arrows, + / −, 0, 1, F, Home, Esc.
-  - Semantic zoom: full cards, then titles, then shapes. Text never renders below 11px.
-  - A minimap, a legend and a node inspector.
-  - Playback that stops at each decision for you to pick a branch, or runs all paths.
-  - Path highlighting and "Focus branch".
-
-  Below the canvas, the explanation covers what the flow does, each step (linked to its node),
-  data in and out, decisions and failure paths, tools, folded endpoints and confidence.
-
-  Projects without HTTP routes still get a flow: static apps from their UI actions, CLIs and
-  scripts from their entry point's import chain ("How the app starts"). Unsupported languages
-  say so instead of guessing. Results are cached per commit and schema version, rebuilt after
-  every analysis, and the layout is stored with them. Below 600px wide, a flow is a step list
-  with an "Open flowchart" button.
-
-- **Code** — *read the repository as it was imported.* A three-panel browser:
-  - **Explorer (left):** a virtualized file tree, folders first, with file-type icons and a
-    filter box. Entries that were not stored are shown in grey with the reason. These are
-    dependency, build and tool directories, `.env` and other sensitive files, files containing a
-    private key, binaries, files over 1 MB, lockfiles, generated files and symlinks.
-  - **Viewer (centre):** read-only, syntax-highlighted code with line numbers, open-file tabs and
-    a breadcrumb. It has buttons to copy the code or the path, and highlights a line or range from
-    `?line=12-20`.
-  - **Code intelligence (right):** the file's outline (functions, classes, methods and types,
-    each jumping to its line), the files that import it (*Used by*) and the files it imports. An
-    import specifier in the code links to the file it resolves to. Unresolved imports say why and
-    are never guessed.
-  - **Shortcuts:** Ctrl/⌘ + P opens a file by name (`api.ts:42` jumps to a line). Ctrl/⌘ + Shift + F
-    searches every stored file on the server, with results grouped by file.
-
-  Files are stored during the import, in parallel with the analysis, so they can be read before
-  it finishes. The header reads "*N* files stored · *M* not stored". Every file:line reference in
-  Wireframe, Architecture, Automation and Technology Intelligence opens here at that line, pinned
-  to the snapshot's commit. Detected secrets are masked when the files are stored, so the raw
-  value never reaches storage, file views, search or copy. Masking covers known credential
-  formats, secret-named assignments, passwords in URLs and JWTs.
-
-  Special states:
-  - An empty repository shows "Repository was empty".
-  - A failed import shows "Import failed at *stage*" with a Retry button that runs the import again.
-  - A snapshot analyzed before this feature asks to be re-analyzed.
+- **Automation** — *how this project actually works, step by step.* Every traced flow (a
+  button click, a page load, a request, a background job) laid out on one canvas in stage
+  columns — User → Frontend → Transport → Backend → Services → Tools → Data → External →
+  Response. Nodes are real repository entities (a component, a route, a middleware
+  registration, a function, a technology); an entity shared by many flows appears once, and
+  isolation shows a single flow or every flow in the current filter. Play / pause / step /
+  replay / speed move a packet along the traced path; the canvas follows the current step,
+  pans and zooms, and finds entities by name or file. The step inspector shows the file and
+  line, function or component, caller and callee, route, technology, input and output as the
+  code shows them (call arguments, method + path, response shape, declared type), sync/async,
+  evidence, confidence and the file's blast radius (dependents at 1–3 hops), with links to the
+  file, the Wireframe, the request lifecycle and Technology Intelligence. Background work is
+  drawn from the enqueue with "ASYNC — does not block the user response"; inferred cache
+  branches are *strong inference*; where tracing stops the flow shows "UNKNOWN NEXT STEP"
+  instead of guessing. The Flow Library searches by route, API, component, function, file,
+  technology (e.g. "Redis" → every flow using Redis) and category (database, cache, queue,
+  external, auth). Flows belong to an analysis snapshot (branch @ commit): earlier snapshots can
+  be opened, and each flow is marked new or changed against the previous one, with removed
+  flows listed. On phones a flow is a vertical sequence with the inspector inline.
 
 - **Collective Intelligence** — *how this architecture compares with anonymized real-world
   projects.* Off by default, per project ("Contribute anonymized patterns to Collective
@@ -147,7 +107,7 @@ with a reason, and flows stop at "Outbound call target unknown" instead of guess
 ```bash
 npm install
 cp .env.example .env            # fill in OAuth credentials, or use the dev token below
-npm run dev                     # server on :8787, web on http://localhost:5173
+npm run dev                     # server on :8787, web on http://localhost:5175
 ```
 
 Without OAuth credentials you can sign in locally with a personal token (development only):
@@ -224,10 +184,6 @@ sizes are stored.
 | `GET /api/projects/:id/architecture/intelligence` | per-technology role, purpose, usage, connections, flows, routes, evidence and confidence, with the snapshot (commit) they belong to |
 | `GET /api/projects/:id/architecture/export?format=png\|svg\|pdf\|mermaid\|json` | PDF is a one-page summary |
 | `POST /api/projects/:id/architecture/regenerate` | recompute from stored facts |
-| `GET /api/projects/:id/code?analysisId=&commit=` | the snapshot's state (`ready`, `storing`, `pending`, `empty`, `failed`, `not-stored`), the stored files and every entry not stored with its reason, the counts, and any import failure with its stage |
-| `GET …/code/file?path=` · `…/code/outline?path=` · `…/code/relations?path=` · `…/code/search?q=&case=1&word=1` | masked content, symbol outline, importers and imports from the snapshot's graph, literal search grouped by file (capped, with line, column and snippet). Access is checked first, so a project you cannot open is a 404 on every endpoint; paths are validated (no `..`, absolute paths or backslashes) |
-| `GET /api/projects/:id/automation/flows` · `…/automation/coverage` | the main flows (nodes, edges, explanation, evidence), candidates, coverage counts, diagnostics, project type · shown / folded / omitted entry points |
-| `POST /api/projects/:id/automation/flows/:flowId/replace {key}` · `PATCH …/automation/flows/:flowId {name}` | owner only: swap a main flow for another candidate · rename it (`null` restores the generated name) |
 | `POST/GET /api/projects/:id/shares` · `DELETE …/shares/:shareId` · `GET /api/shared/:token/…` | read-only share / embed links (hashed, revocable) |
 | `GET /api/projects/:id/analysis/stream` | SSE: `snapshot`, `stage`, `progress`, `partial`, `complete`, `failure` |
 | `GET /api/github/repos?q=&owner=&page=` · `GET /api/github/repos/:owner/:repo` | real repositories and branches |
@@ -273,44 +229,9 @@ npm run typecheck
   entities and connections (files, symbols, packages, technologies, imports, architecture labels),
   technologies connect only to files that import them or appear in their evidence, the traced
   flow's files in order, complete finite layouts per chapter, determinism, the phone model.
-- `packages/analyzer/test/automation.test.ts` — Automation Engine on the following fixtures:
-  full-stack (Fastify + React), FastAPI + Celery, Next.js + Stripe webhook, a monorepo with
-  Compose services, a static React app, a commander CLI, a single Python script and a Rust
-  crate (unsupported). It checks:
-  - Each flow has one trigger, an end and no unreachable nodes. Evidence points to real files,
-    and backend files never sit in the frontend lane.
-  - Layouts have no overlaps in every lane, spacing and direction mode.
-  - No banned phrases appear, and shown + folded + omitted equals the total.
-  - Expected names and decisions are produced, and output is deterministic.
-  - A 45-step layout lays out cleanly, and the 150-node cap groups the rest.
-- `server/test/automation.test.ts` — flows are built after an analysis; fallback flows keep
-  counts consistent; a schema bump regenerates; rename and reset work and reject banned names;
-  replace is owner only.
-- `web/src/features/automation/chartModel.test.ts` — semantic zoom levels against the 11px
-  floor, fit, trigger anchor, zoom to the cursor, pan bounds, path highlighting, collapsed
-  branches, and playback that waits at decisions, runs all paths and forks async work.
-- `packages/analyzer/test/code.test.ts` — secret masking (credentials, secret-named values,
-  URL passwords, JWTs; lines never move; regexes and expressions assigned to secret-named
-  variables are left alone), outlines for TS/Python/Go/Rust/Markdown, and the stored-file walk
-  with every exclusion reason.
-- `server/test/code.test.ts` — Code tab acceptance against a real git remote seeded with a fake
-  Stripe key, a database URL password, `.env`, an HTML file with scripts, binaries, a file over
-  1 MB and `node_modules`. It checks:
-  - Counts and exclusion reasons.
-  - The secrets never appear in file responses, search results or the database.
-  - HTML comes back as JSON text.
-  - Search options work.
-  - Outline and Used by are correct.
-  - The snapshot can be pinned by commit or analysis.
-  - Path traversal is rejected.
-  - Other users and anonymous requests get 404 on every endpoint.
-  - "Import failed at cloning" appears, and Retry runs a real re-import.
-  - Identical file contents are stored once across snapshots.
-  - An empty repository is reported as empty.
-- `web/src/features/code/code.test.tsx` — the highlighter (state across lines, every
-  character kept, masked tokens). The explorer model (folders first, natural sort, filter). Line
-  links. HTML, scripts and hostile file names render as text with no elements created. Import
-  links and line highlighting.
+- `web/src/features/automation/flowGraph.test.ts` — merged flow canvas: shared entities appear
+  once, one node per technology, stage column order, async work attached to the enqueue, flow
+  search by technology/route/component/category, snapshot comparison (new, changed, removed).
 - `web/src/graph/ring.test.ts` — ring layout order and determinism (independent of input order
   and filters), exact file-to-file threads, bundling through shared control points, default
   noise filters, hit-testing, and 1,500 files / 6,000 threads within budget.
@@ -390,33 +311,11 @@ opens the live sample project (`/sample?view=architecture`).
   because it cannot be measured statically.
 - Method-level tracing for flows covers JS/TS and Python; other languages fall back to
   file imports.
-- Automation stitches flows only through a direct enqueue → worker link. It does not stitch
-  flows through IDs one flow returns and another reads, or through a table two flows share.
-  - Decisions come from `if` / `try` blocks that exit (throw, return, respond, redirect) in
-    JS/TS and Python. Branches that don't exit, and `switch` statements, aren't drawn.
-  - Decision text is the code's own condition when there is no status code or message to name
-    it (e.g. `origin !== config.appOrigin?`).
-  - Static frontends get no client-side decisions.
-  - Languages other than JS/TS and Python get an entry-point flow that says they are not traced.
-  - A flow is capped at 150 nodes, with the remainder grouped.
-  - Card text is 16px at 100% zoom so it stays readable when zoomed out. As a result, a long flow
-    is wider than the screen and opens at 0.85× anchored on its trigger.
-- Opening an older snapshot computes its architecture on first use (then it is cached).
-  Snapshots are listed only for owned projects, not on the sample or share links.
-- Code tab:
-  - **Syntax highlighting** is a built-in tokenizer covering about 30 languages. Other files are
-    plain text, and lines over 4,000 characters (minified code) are not highlighted.
-  - **Outline** is pattern-based: declarations, not every nested local.
-  - **Used by and imports** exist only for JS/TS (what the dependency graph traces), and appear
-    once the analysis finishes.
-  - **Search** is exact text (case and whole-word options), not regex. It is capped at 1,000
-    matches, 300 files and 4 seconds.
-  - **Storage** keeps at most 50,000 files per snapshot.
-  - **Secret masking** can't recognise every secret. A value that matches none of its patterns
-    stays visible. Likewise, a long random value assigned to a secret-named variable is masked
-    even if it isn't a credential.
-  - **The public sample** is CodePilot's own code, so its Code tab is open to everyone.
-  - **Shared links** never include code.
+- The Automation canvas shows at most 150 flows per snapshot (the analyzer’s cap), user actions
+  first. Snapshot comparison matches flows by id and step signature, so a flow whose
+  route or first step changes is reported as removed plus new rather than changed. Opening an
+  older snapshot computes its architecture on first use (then it is cached). Snapshots are
+  listed only for owned projects, not on the sample or share links.
 - Grounded AI answers are not implemented yet; the landing page marks that section
   "Coming next".
 - GitHub OAuth apps have no read-only scope for private code, so the `repo` scope is requested.
