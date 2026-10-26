@@ -1,322 +1,837 @@
-# CodePilot
+# ⚡ CodePilot — AI-Powered Codebase Intelligence Platform
 
-Connect a GitHub repository and get a living, traceable map of its code: every file, every
-import resolved to its exact target and line, classified and summarized.
+> Understand your codebase. Visualize its architecture. Trace how it works.
 
-Landing page, authentication + GitHub onboarding, real analysis with streamed progress, and
-Project Home with three views:
+CodePilot is an AI-powered software engineering intelligence platform designed to help developers understand complex repositories through interactive dependency visualization, architecture discovery, execution-flow analysis, technology intelligence, and source-code exploration.
 
-- **Summary** — totals, hubs, cycles, orphans, entry points.
-- **Wireframe** — *what is connected to what.* Three modes over the same graph:
-  - **Ring**: every file on one circle in fixed category arcs (Pages, Routes, Components,
-    Actions, Services, Utilities, APIs, Configuration, Other), ordered by directory then name,
-    so a file never moves when filtering, searching or zooming. Each dependency is a thread from
-    the exact source file to the exact target file, hierarchically bundled through category and
-    directory control points. Noise controls (intra-group, weight threshold, show all), hover
-    focus (red = imports, blue = imported by, everything else ~8%), click to lock + inspector,
-    double-click to isolate, click a category band to focus its dependencies, semantic zoom
-    (ticks → file names → names + directory + type), keyboard navigation, one-time load sequence.
-  - **Layered**: top-to-bottom routes/pages → components → actions → services → utilities.
-  - **Summary**: totals, category dependency matrix (a cell opens those threads on the ring),
-    most depended-on files, import cycles and the accessible file table.
-- **Architecture** — *how the system works.* Three modes:
-  - **System map**: layered swimlanes (Client, Transport / API, Backend, Services, Data / Cache,
-    Async workers, External services, Deployment — only those present): transports by protocol
-    and library (REST · fetch via `request()`, Server-Sent Events · EventSource…), API route
-    groups, the middleware chain in registration order, route handlers, service modules, and the
-    data stores, queues and external services they call, inside application boundaries. Calls
-    whose target is computed at runtime go to an explicit "Unknown target".
-  - **Technologies**: name, category, version, role, used by, evidence and confidence for every
-    detected technology; focusing a row shows its connections on the map.
-  - **Request flows**: real scenarios traced from the code (a button click, a page load, a
-    stream) through the API client, transport, route, middleware, handler, services and data or
-    external calls, back through the response to the UI's navigation and state updates — in
-    Frontend / Backend / External / Async swimlanes with play, pause, step, replay, speed and
-    per-step file, line, technology, sync/async and evidence. Background work is a separate
-    async branch; cache reads show hit/miss branches.
-  - Cross-links: Wireframe file → its component in the Architecture; component, route and flow
-    step → the file in the Wireframe or on GitHub; technology → matrix and map.
-- **Technology Intelligence** — *what powers the system, and why the code shows it is used.*
-  Every technology (catalogued frameworks, databases, caches, queues, services, infrastructure,
-  and other dependencies from the import graph) explained for this repository only: what it
-  does here, why it is used here, where (files, functions, package scripts), its architecture
-  connections with a small focused relationship graph, the request flows and routes that use
-  it, the evidence, and a confidence for each claim — *confirmed*, *strong inference*,
-  *possible* or *unknown*. Purposes come only from what the code does with it (e.g. "Used for
-  caching (pricing reads from and writes to it) through the `cache` client created at
-  backend/app/cache.py:5"); when the code does not prove a purpose it says "Purpose could not be
-  confidently determined from the available source." General descriptions are labelled as
-  such and never presented as project facts. Explanations are stored with the analysis
-  snapshot (commit) and regenerated whenever the repository is re-analyzed. Links to the
-  Wireframe, the system map, request flows, files and evidence.
-  - Exports: PNG / SVG / PDF one-pager / Mermaid / JSON.
-- **Automation** — *how this project actually works, step by step.* Every traced flow (a
-  button click, a page load, a request, a background job) laid out on one canvas in stage
-  columns — User → Frontend → Transport → Backend → Services → Tools → Data → External →
-  Response. Nodes are real repository entities (a component, a route, a middleware
-  registration, a function, a technology); an entity shared by many flows appears once, and
-  isolation shows a single flow or every flow in the current filter. Play / pause / step /
-  replay / speed move a packet along the traced path; the canvas follows the current step,
-  pans and zooms, and finds entities by name or file. The step inspector shows the file and
-  line, function or component, caller and callee, route, technology, input and output as the
-  code shows them (call arguments, method + path, response shape, declared type), sync/async,
-  evidence, confidence and the file's blast radius (dependents at 1–3 hops), with links to the
-  file, the Wireframe, the request lifecycle and Technology Intelligence. Background work is
-  drawn from the enqueue with "ASYNC — does not block the user response"; inferred cache
-  branches are *strong inference*; where tracing stops the flow shows "UNKNOWN NEXT STEP"
-  instead of guessing. The Flow Library searches by route, API, component, function, file,
-  technology (e.g. "Redis" → every flow using Redis) and category (database, cache, queue,
-  external, auth). Flows belong to an analysis snapshot (branch @ commit): earlier snapshots can
-  be opened, and each flow is marked new or changed against the previous one, with removed
-  flows listed. On phones a flow is a vertical sequence with the inspector inline.
+Built with React, TypeScript, Vite, and FastAPI, CodePilot transforms imported GitHub repositories into navigable software intelligence, helping developers understand how files, functions, services, APIs, databases, and external integrations connect.
 
-- **Collective Intelligence** — *how this architecture compares with anonymized real-world
-  projects.* Off by default, per project ("Contribute anonymized patterns to Collective
-  Intelligence" in project Settings). With explicit consent, each analyzed snapshot contributes a
-  deterministic **structural fingerprint**: size and type *ranges*, topology buckets (density,
-  90th-percentile fan-out, fan-in, cycles), layers, architecture pattern, technology *categories*,
-  category-to-category relations, structural risk and resilience codes, and the month — every
-  field and value from an enumerated allowlist that the server validates before storage
-  (`server/src/collective/schema.ts`). Never: code, file contents, paths or names, repository or
-  organization names, symbols, comments, commits, environment variables, secrets, IPs, exact counts
-  or incident descriptions. Fingerprints live in a separate database (`collective.sqlite`) keyed
-  by an HMAC pseudonym, with no foreign key to projects or users; only the server, which holds the
-  key, can find a project's own rows (to show them to the owner and to revoke). The Architecture
-  page's **Collective** tab keeps **This project** (its own analysis) and **Collective data**
-  (aggregates) in separate, differently styled columns. Benchmarks use the most specific
-  population with **N ≥ 20** contributing projects (same pattern and size band → same size band →
-  all), every aggregate shows its N and population definition, cells under 5 projects are
-  suppressed, and below the threshold nothing is shown at all. Insights are labelled *observed*,
-  *correlated* (self-reported incidents) or *statistical pattern* — never predictions or causes.
-  Files and components can be tagged with an incident (month and source); with consent only "an
-  incident on a `<kind>` element in `<month>`" is shared. Periodic association-rule discovery
-  (support, confidence, lift, χ² with p < 0.01, subgroups ≥ N) only queues patterns for human
-  review; nothing is published until a reviewer approves it, and a causal claim needs a written
-  justification. A State of Architecture report aggregates all contributions, withheld below N.
-  Revoking consent stops extraction, marks every fingerprint and outcome inactive and recomputes
-  all aggregates without them; the inactive rows are kept (pseudonymous, allowlisted), which the
-  settings dialog says plainly. Consent changes are kept in an audit log.
+Instead of treating source code as disconnected files, CodePilot aims to build a unified, evidence-backed model of how an application is structured and how its components interact.
 
-Nothing is decorative data. Every node and edge comes from parsing source and configuration;
-each carries evidence (file, line, redacted snippet) and a confidence level — *confirmed*,
-*strong inference* or *possible*. Imports that cannot be resolved are shown as *Unresolved*
-with a reason, and flows stop at "Outbound call target unknown" instead of guessing.
+---
 
-## Quick start
+## 📖 Table of Contents
 
-```bash
-npm install
-cp .env.example .env            # fill in OAuth credentials, or use the dev token below
-npm run dev                     # server on :8787, web on http://localhost:5175
+- [About the Project](#-about-the-project)
+- [The Problem](#-the-problem)
+- [Key Features](#-comprehensive-feature-breakdown)
+- [System Architecture](#-system-architecture)
+- [Repository Analysis Pipeline](#-repository-analysis-pipeline)
+- [Technology Stack](#-complete-tech-stack--tools-used)
+- [Project Architecture](#-project-architecture)
+- [Core Analysis Concepts](#-core-analysis-concepts)
+- [API Architecture](#-api-architecture)
+- [Security and Authentication](#-security-and-authentication)
+- [Getting Started](#-getting-started)
+- [Environment Configuration](#-environment-configuration)
+- [Development Workflow](#-development-workflow)
+- [Performance and Scalability](#-performance-and-scalability)
+- [Testing and Verification](#-testing-and-verification)
+- [Engineering Principles](#-engineering-principles)
+- [Future Roadmap](#-future-roadmap)
+- [License](#-license)
+
+---
+
+## 🎯 About the Project
+
+Modern software applications consist of interconnected components, frameworks, services, databases, APIs, and external dependencies. As a codebase grows, understanding how these elements interact becomes increasingly difficult.
+
+CodePilot addresses this challenge by turning a repository into an interactive intelligence workspace.
+
+Developers can import repositories, explore file dependencies, investigate application architecture, trace execution paths, understand technology usage, and navigate directly to the source code supporting an analysis.
+
+The long-term vision is to create a unified intelligence layer that helps developers answer questions such as:
+- How is this application structured?
+- Which files depend on a particular component?
+- What happens when a user performs a specific action?
+- How does a request travel from the frontend to the backend and database?
+- Where and why is a particular technology used?
+- Which components might be affected by a code change?
+- Where should I look when investigating an unfamiliar feature?
+
+**Core philosophy:** CodePilot should explain software using evidence from the actual repository rather than relying on generic explanations or fabricated architectural relationships.
+
+---
+
+## 🚨 The Problem
+
+Understanding an unfamiliar codebase is one of the most time-consuming parts of software development.
+
+### Common challenges
+
+1. **Complex dependencies**  
+   A single file can be imported by dozens of components, services, and modules. Finding these relationships manually becomes difficult as the project grows.
+2. **Invisible application architecture**  
+   Source files do not automatically reveal the complete architecture. Developers must connect routes, middleware, business logic, database operations, and external services themselves.
+3. **Difficult execution-flow tracing**  
+   Following a user action through event handlers, API clients, backend routes, services, and data stores often requires opening many files.
+4. **Technology overload**  
+   A project may contain dozens of libraries and frameworks without clear documentation of where each technology is actually used.
+5. **Missing or outdated documentation**  
+   Traditional documentation often becomes disconnected from the implementation as code evolves.
+6. **Slow developer onboarding**  
+   New developers need to understand the directory structure, architectural decisions, business logic, and critical execution paths before making meaningful contributions.
+
+### The CodePilot approach
+
+CodePilot brings these activities into a unified workspace where repository structure, dependency relationships, architecture, execution flows, technology usage, and source files can be explored together.
+
+---
+
+## ✨ Comprehensive Feature Breakdown
+
+### 1. 📊 Project Intelligence Dashboard
+
+The dashboard provides the entry point for understanding an imported repository.
+
+**Key capabilities:**
+- **Project Overview** — Present repository information and available analysis results.
+- **Technology Overview** — Display detected languages, frameworks, libraries, and other technologies.
+- **Repository Structure** — Explore the organization of source files and folders.
+- **Analysis Status** — Communicate import, indexing, and analysis progress.
+- **Cross-Module Navigation** — Move between dependency visualization, architecture, execution flows, technology intelligence, and source code.
+- **Repository Context** — Keep analysis associated with the relevant project and repository snapshot.
+
+The dashboard reflects actual analysis results rather than displaying hardcoded statistics or invented repository metadata.
+
+---
+
+### 2. 🕸️ Wireframe — Dependency Intelligence
+
+Wireframe focuses on the relationships between files and modules. Instead of manually navigating imports throughout a repository, developers can explore a visual representation of the dependency graph.
+
+**Key capabilities:**
+- **File Dependency Graph** — Visualize relationships between files.
+- **Import Relationships** — Identify which files import other files.
+- **Reverse Dependencies** — Discover which files depend on a selected file.
+- **Circular Dependency Detection** — Identify dependency cycles when supported by the analysis.
+- **Dependency Exploration** — Inspect neighboring files and connected modules.
+- **File Search** — Locate files quickly within large repositories.
+- **Relationship Inspection** — View available dependency metadata and source evidence.
+- **Source Navigation** — Open relevant files in the Code tab.
+- **Graph Filtering** — Reduce visual clutter by filtering file types and relationship categories.
+
+#### Circular dependency visualization
+For large repositories, a circular chord-style layout can group files by category while displaying their relationships:
+- Pages
+- Routes
+- Components
+- Actions and handlers
+- Services
+- Utilities
+- APIs
+- Configuration
+- Other files
+
+The visualization prioritizes readable relationships over displaying every possible connection simultaneously.
+
+**Why it matters:** Wireframe helps developers understand the structure of a repository, identify tightly coupled modules, discover dependency chains, and investigate the potential impact of changes.
+
+> **Engineering principle:** Dependency edges must come from actual import or reference analysis. Unresolved relationships must not be presented as confirmed dependencies.
+
+---
+
+### 3. 🏗️ Architecture — Application Structure Intelligence
+
+Architecture helps developers understand the major components of an application and how they are connected. Rather than presenting only a list of technologies, it aims to reconstruct the application's actual structure from repository evidence.
+
+**Key capabilities:**
+- **Frontend Architecture** — Identify pages, components, state management, and API clients.
+- **Backend Architecture** — Identify routes, middleware, services, and business logic.
+- **Data Layer** — Discover database access, caching, persistence, and other data-related components.
+- **External Integrations** — Identify references to external APIs and services.
+- **Component Relationships** — Connect architectural components using available source evidence.
+- **Request Lifecycle Visualization** — Represent supported request paths across application layers.
+- **Source References** — Navigate from architectural components to relevant files.
+- **Technology Connections** — Connect detected technologies to the parts of the application where they are used.
+
+#### Example request lifecycle
+```
+User Action
+    │
+    ▼
+Frontend Component
+    │
+    ▼
+Event Handler
+    │
+    ▼
+API Client / Transport
+    │
+    ▼
+Backend Route
+    │
+    ▼
+Middleware
+    │
+    ▼
+Business Logic / Service
+    │
+    ▼
+Database / Cache / External API
+    │
+    ▼
+Response
+    │
+    ▼
+Frontend State Update
+    │
+    ▼
+UI Update
 ```
 
-Without OAuth credentials you can sign in locally with a personal token (development only):
+This diagram illustrates a common application pattern. Actual repositories may use different architectures, omit some stages, or introduce additional services. CodePilot displays only stages and connections supported by the analyzed project.
 
-```bash
-DEV_GITHUB_TOKEN=$(gh auth token) npm run dev
+**Why it matters:** Architecture intelligence helps developers understand system boundaries, locate business logic, discover integration points, and investigate how an application is assembled.
+
+---
+
+### 4. ⚙️ Automation — Execution-Flow Intelligence
+
+Automation focuses on understanding how the application actually executes operations. It is not limited to scheduled tasks or workflow automation. Its central purpose is to trace application behavior from an entry point through the relevant code and connected services.
+
+**Key capabilities:**
+- **Entry-Point Discovery** — Identify supported triggers such as UI events, API routes, handlers, and background jobs.
+- **Execution-Flow Tracing** — Follow function calls and relationships through available source analysis.
+- **Frontend-to-Backend Mapping** — Connect frontend actions to API requests and backend handlers when evidence supports the connection.
+- **Service Tracing** — Explore business logic, utility calls, and service interactions.
+- **Data Operations** — Identify database, cache, queue, and external-service interactions.
+- **Background Flow Discovery** — Identify supported worker, queue, and asynchronous execution patterns.
+- **Flow Inspection** — Open individual stages and navigate to their source files.
+- **Step Navigation** — Explore supported execution paths step by step.
+- **Flow Catalog** — Organize discovered flows into searchable groups.
+- **Unresolved-Step Reporting** — Identify where tracing cannot establish the next relationship.
+
+#### Example: Place Order flow
+```
+Customer clicks "Place Order"
+    │
+    ▼
+Checkout Component
+    │
+    ▼
+Submit Handler
+    │
+    ▼
+Order API Client
+    │
+    ▼
+Backend Order Route
+    │
+    ▼
+Order Service
+    │
+    ▼
+Database Transaction
+    │
+    ▼
+Payment Provider
+    │
+    ▼
+Order Confirmation
+    │
+    ▼
+Updated UI State
 ```
 
-The dev token is stored server-side, encrypted, in `.data/` (gitignored). Delete `.data/` to
-remove it.
+#### Background processing
+When supported by the repository, background flows can include:
+- Queue producers and consumers.
+- Worker processes.
+- Asynchronous tasks.
+- Scheduled jobs.
+- Event-driven handlers.
 
-Production: `npm run build && NODE_ENV=production TOKEN_ENCRYPTION_KEY=… npm start` — the
-server then also serves `web/dist` with a Content-Security-Policy.
+These flows are connected to their initiating operations only when the relationship can be established.
 
-## Repository layout
+**Why it matters:** Automation helps developers understand application behavior, follow request lifecycles, locate important processing stages, and investigate unfamiliar execution paths.
 
-```
-packages/analyzer   Analysis engine (no web/server dependencies)
-  scanner.ts          walks the checkout; exclusions, secret files, generated files, symlinks
-  parser/             TypeScript compiler API: imports, re-exports, dynamic import(), require(), exports
-  resolver/           relative + extensions + index, tsconfig/jsconfig paths & baseUrl (incl. extends
-                      and solution-style references), package.json "imports", workspaces
-                      (npm/yarn/pnpm/lerna) with "exports" conditions, builtins, external packages
-  classifier.ts       deterministic node types with evidence (path rules, then content rules)
-  entrypoints.ts      entry points from manifests, npm scripts, HTML <script src>, framework conventions
-  summary.ts          hubs, Tarjan SCC cycles with traceable hops, orphans
-  layout.ts           deterministic force / circular / layered / grouped layouts (d3-force, fixed seed)
-  cluster.ts          adaptive directory clusters used by layouts and hulls
-  architecture/       two-stage architecture detection:
-    extract.ts          facts while the checkout exists: manifests, lockfiles, imports, clients,
-                        queries, routes, HTTP calls, env refs, Dockerfile/Compose/k8s/Helm/Terraform/
-                        serverless/CI/proxy/platform config — each with file, line, redacted snippet
-    lifecycleFacts.ts   UI triggers (event, handler, component, button text, what happens after),
-                        middleware (hooks, plugins, use(), guards), route responses, client functions
-    detect.ts           pure detection from facts + dependency graph: apps, tools, connections
-    system.ts           the system map: transports, API groups, middleware chain, handlers, services
-    intelligence.ts     technology intelligence: role and purpose from operations, routes, scripts,
-                        middleware and configuration; "undetermined" when the code does not prove it
-    flows.ts            request lifecycles: UI action → client → route → middleware → handler →
-                        traced calls → response → UI update, with an async branch for queued work
-    findings.ts         pattern, strengths and risks, each citing evidence
-    catalog.ts          technology catalog (packages, modules, images, env vars, URL schemes)
-    layout.ts, render.ts shared diagram layout and SVG/Mermaid renderers (web + exports)
-  shapes.ts, svg.ts   node markers shared by canvas and SVG/PNG export
-  test/               hand-verified fixture repo + resolver/classifier/scale tests
-server              Fastify API, SQLite (node:sqlite), OAuth, clone + analysis jobs, SSE
-web                 React + Canvas renderer (d3-zoom, quadtree hit-testing)
-legacy              the previous prototype, kept for reference; not built or served
-```
+---
 
-Pipeline: GitHub → shallow single-branch clone (token via `GIT_CONFIG_*` env, never in URL or
-argv) → scanner → parser → resolver → classifier → graph builder → SQLite → API → SSE → renderer.
-The clone is deleted after analysis; only paths, specifiers, symbol names, line numbers and
-sizes are stored.
+### 5. 🧠 Technology Intelligence
 
-## API
+Technology Intelligence explains how technologies are used within a particular repository. A dependency appearing in `package.json` or `requirements.txt` does not necessarily prove that the application actively uses it. CodePilot connects technology information to implementation evidence whenever possible.
 
-| Endpoint | |
+**Key capabilities:**
+- **Technology Detection** — Identify languages, frameworks, libraries, databases, caches, and external integrations.
+- **Project-Specific Explanations** — Explain the observable role of a technology in the analyzed application.
+- **Usage Locations** — Identify files and modules associated with a technology.
+- **Architecture Connections** — Connect technologies to relevant application components.
+- **Execution-Flow Connections** — Show where technologies participate in supported application flows.
+- **Dependency Context** — Use manifests and source references to distinguish declared dependencies from observed usage.
+- **Evidence-Based Explanations** — Link explanations to relevant files, symbols, or source locations.
+- **Confidence Indicators** — Distinguish confirmed findings from inferences and unresolved questions.
+
+#### Example: Redis
+| Field | Example |
 | --- | --- |
-| `GET /api/projects/:id/graph?types=&focus=&depth=` | nodes + edges, cycles, orphans, entry points |
-| `GET /api/projects/:id/graph/layout?layout=force\|circular\|layered\|type\|directory` | cached positions |
-| `GET /api/projects/:id/graph/nodes/:nodeId` | imports, exports, consumers, dependencies, dependents, transitive depth 1–3 |
-| `GET /api/projects/:id/graph/summary` | totals, counts by type, hubs, cycles, orphans, entry points, unresolved imports |
-| `GET /api/projects/:id/graph/export?format=png\|svg\|json` | JSON includes repository metadata |
-| `GET /api/projects/:id/architecture` | nodes, edges, layers, system map, evidence, flow list (with UI actions and lanes), summary |
-| `GET /api/projects/:id/architecture/tools/:toolId` | explanation, connections, blast radius, flows, evidence |
-| `GET /api/projects/:id/architecture/flows` · `…/architecture/summary` | flows with steps · pattern, strengths, risks |
-| `POST /api/projects/:id/collective-intelligence/consent` · `GET …/collective-intelligence/status` | opt in or out (owner only, `{ "enabled": boolean }`, audited) · consent, history, and exactly what this project has contributed |
-| `GET /api/projects/:id/benchmark` · `GET /api/projects/:id/pattern-insights` | this project's metrics beside k-anonymous population statistics (N, population, privacy rule on every aggregate) |
-| `POST /api/projects/:id/graph/nodes/:nodeId/incident-tag` | tag a file or component with an incident; only the element kind and month are shared, with consent |
-| `GET /api/collective-intelligence/state-of-architecture` · `…/schema` | aggregate report (withheld below N) · the full fingerprint allowlist and privacy rules |
-| `GET /api/collective-intelligence/review` · `POST …/review/:patternId` · `POST …/discovery/run` | reviewers only (`COLLECTIVE_REVIEWERS`): discovered patterns and their approval |
-| `GET /api/projects/:id/snapshots` | completed analyses (branch, commit, finished) newest first; every architecture endpoint takes `?analysisId=` to read one |
-| `GET /api/projects/:id/architecture/intelligence` | per-technology role, purpose, usage, connections, flows, routes, evidence and confidence, with the snapshot (commit) they belong to |
-| `GET /api/projects/:id/architecture/export?format=png\|svg\|pdf\|mermaid\|json` | PDF is a one-page summary |
-| `POST /api/projects/:id/architecture/regenerate` | recompute from stored facts |
-| `POST/GET /api/projects/:id/shares` · `DELETE …/shares/:shareId` · `GET /api/shared/:token/…` | read-only share / embed links (hashed, revocable) |
-| `GET /api/projects/:id/analysis/stream` | SSE: `snapshot`, `stage`, `progress`, `partial`, `complete`, `failure` |
-| `GET /api/github/repos?q=&owner=&page=` · `GET /api/github/repos/:owner/:repo` | real repositories and branches |
-| `POST /api/projects {owner, repo, branch}` | start an analysis |
+| **Technology** | Redis |
+| **General role** | In-memory data store |
+| **Project usage** | Determined from repository evidence |
+| **Related files** | Files identified by analysis |
+| **Architecture connection** | Relevant services and data flows |
+| **Evidence** | Source references, configuration, or dependency metadata |
+| **Confidence** | Based on the available evidence |
 
-Architecture results are cached per project, commit SHA and detector version: an unchanged
-commit is never re-analyzed, and a new sync recomputes it.
+The project-specific usage must be derived from the actual repository. CodePilot does not automatically claim Redis was selected for performance, caching, or queues without supporting evidence.
 
-Node: `{ id, path, type, language, size, classification_evidence, … }` · Edge:
-`{ id, source, target, symbols, kind: static|dynamic|re-export|require, line, resolved, … }`.
-Each relationship is stored once; the UI colours it red from the importer's side and blue from
-the imported file's side.
+**Why it matters:** Technology Intelligence helps developers understand not only which tools a project contains, but where they participate in its architecture and behavior.
 
-## Tests
+---
 
-```bash
-npm test          # analyzer, server integration, web unit tests
-npm run typecheck
+### 6. 💻 Code — Repository Browser
+
+The Code tab provides direct access to the files stored for an imported repository. It acts as the source-reading interface connecting CodePilot's visualizations and explanations to the underlying implementation.
+
+**Key capabilities:**
+- **File Explorer** — Browse folders and files in a hierarchical tree.
+- **Syntax Highlighting** — Display code using the appropriate language highlighting where supported.
+- **Line Numbers** — Navigate and reference exact source locations.
+- **Multiple Open Files** — Keep multiple files open in the viewer.
+- **Breadcrumb Navigation** — Display the current repository-relative path.
+- **Quick File Search** — Open files using <kbd>Ctrl</kbd>+<kbd>P</kbd>.
+- **Repository-Wide Search** — Search stored code using <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>.
+- **Code Outline** — Navigate supported functions, classes, and symbols.
+- **Used By** — Inspect files that import the current file.
+- **Import Navigation** — Open resolved import targets.
+- **Cross-Module Navigation** — Jump to relevant files and lines from Wireframe, Architecture, Automation, and Technology Intelligence.
+- **Copy Actions** — Copy code and repository-relative paths.
+- **Excluded-File Visibility** — Display available exclusion metadata and reasons for files that were not stored.
+
+#### Security and performance
+The Code tab:
+- Enforces project authorization before returning file content.
+- Renders repository contents as text rather than executable HTML.
+- Masks detected secrets before exposing content to clients.
+- Avoids executing or modifying repository files.
+- Loads large files and directory structures efficiently.
+- Preserves file and line references across supported analysis modules.
+
+---
+
+## 🏗️ System Architecture
+
+CodePilot separates its frontend experience from its backend analysis and persistence responsibilities.
+
+```mermaid
+flowchart TB
+    U[Developer] --> FE[React + TypeScript + Vite]
+    FE --> AUTH[Authentication and Authorization]
+    FE --> API[FastAPI Backend]
+    AUTH --> API
+    API --> PROJECT[Project Management]
+    API --> IMPORT[Repository Import]
+    API --> ANALYSIS[Analysis Services]
+    API --> CODE[Code and Search Services]
+    IMPORT --> GH[GitHub Repository]
+    IMPORT --> STORE[Repository Storage]
+    STORE --> ANALYSIS
+    ANALYSIS --> DEP[Dependency Analysis]
+    ANALYSIS --> ARCH[Architecture Analysis]
+    ANALYSIS --> FLOW[Execution-Flow Analysis]
+    ANALYSIS --> TECH[Technology Detection]
+    DEP --> DB[(Persistent Metadata)]
+    ARCH --> DB
+    FLOW --> DB
+    TECH --> DB
+    CODE --> STORE
+    CODE --> DB
+    DEP --> FE
+    ARCH --> FE
+    FLOW --> FE
+    TECH --> FE
+    CODE --> FE
 ```
 
-- `packages/analyzer/test/fixture.test.ts` — exact edge-set match against a hand-verified
-  fixture; every edge's line contains its specifier; static/re-export/dynamic/require, aliases,
-  index/extension, workspaces, `package.json` imports, unresolved reasons, cycles, orphans,
-  entry points, exports with lines, secret/exclusion handling, determinism.
-- `packages/analyzer/test/scale.test.ts` — 1,200 files / 6,000 imports extracted exactly; all
-  four layouts computed and deterministic.
-- `packages/analyzer/test/architecture.test.ts` — hand-written Next.js + Postgres,
-  FastAPI + Redis + Celery, multi-service Compose and Fastify + React repositories: exact nodes,
-  connections, system maps, middleware, responses, UI triggers and full request lifecycles
-  (lanes, kinds, labels, lines), automation stages, functions, inputs/outputs, per-step
-  confidence and the flow index, risks and patterns; every evidence snippet matches its source
-  line; determinism.
-- `server/test/collective.test.ts` — Collective Intelligence acceptance: consent is off by
-  default; no fingerprint without consent; fingerprints contain only allowlisted fields and
-  values (checked against four fixture repositories for paths, file names, symbols, component
-  names, snippets and URLs) and anything else is rejected before storage; the collective database
-  holds no project, user, repository, commit, path or token; statistics below N are withheld
-  entirely and small cells suppressed; every aggregate carries N; repository evidence and
-  aggregate data stay apart; revocation excludes a project from all aggregates; other users cannot
-  read a project's contribution; insights are labelled as observations; incident descriptions
-  never leave the project; discovered patterns wait for review and causal claims need support.
-- `web/src/features/landing3d/model.test.ts` — the landing scene contains only snapshot
-  entities and connections (files, symbols, packages, technologies, imports, architecture labels),
-  technologies connect only to files that import them or appear in their evidence, the traced
-  flow's files in order, complete finite layouts per chapter, determinism, the phone model.
-- `web/src/features/automation/flowGraph.test.ts` — merged flow canvas: shared entities appear
-  once, one node per technology, stage column order, async work attached to the enqueue, flow
-  search by technology/route/component/category, snapshot comparison (new, changed, removed).
-- `web/src/graph/ring.test.ts` — ring layout order and determinism (independent of input order
-  and filters), exact file-to-file threads, bundling through shared control points, default
-  noise filters, hit-testing, and 1,500 files / 6,000 threads within budget.
-- `server/test/api.test.ts` — mock GitHub API (paginated repos, branches, expired token) and a
-  real local git remote: repo listing, search/filter/pagination, SSE stage order and counts,
-  graph/details/summary/export endpoints, layouts, architecture caching by commit, snapshots and
-  per-snapshot flows, regenerate,
-  all architecture export formats, share links, access control, CSRF, token never reaching clients.
-- `web/src/**/*.test.ts(x)` — red/blue highlight semantics, transitive depth, keyboard
-  navigation, search ranking, reduced motion.
+### Architectural responsibilities
 
-The Wireframe ring was measured in Chrome at 1,500 files / ~6,000 dependencies (2× pixel ratio):
-first draw including all bundled splines 32 ms, then 9–15 ms per redraw (all threads, noise-
-reduced default, zoomed-in labels) and under 1 ms with a file focused. Nothing redraws when idle.
+| Layer | Responsibility |
+| --- | --- |
+| **Frontend** | Project navigation, visualizations, code browsing, and user interactions |
+| **Authentication** | User identity, sessions, and access control |
+| **FastAPI backend** | API handling, business logic, validation, and authorization |
+| **Repository import** | Retrieving and organizing repository content |
+| **Analysis services** | Discovering dependencies, architecture, technologies, and execution relationships |
+| **Persistent metadata** | Storing project information, analysis results, and relationships |
+| **Repository storage** | Retaining stored source files and generated artifacts where configured |
 
-### Landing page
+---
 
-The landing page is one continuous story over a 3D "living codebase" (Three.js through React
-Three Fiber, in `web/src/features/landing3d/`). The scene is CodePilot's analysis of its own
-repository: every point is a real source file, exported symbol, external package, technology or
-application, and every line a real import, export, package import, technology use or detected
-architecture connection. As the page scrolls, the same nodes morph through one layout per
-chapter — Discover (GitHub → the file tree → CodePilot), Understand (files grouped by directory
-around the applications), Map (layers with the REST / SQL connections the code proves), Trace
-(a request traced end to end, packet and step list in sync), Explain (technologies on an orbit,
-with what each does here, why, where, how it connects, and its evidence), Verify (the call site
-and route behind the web → server connection, line by line) — and converge for the final call to
-action. Hovering a node highlights its connections with a tooltip; nearby nodes lean toward the
-cursor. Below the story, seven product surfaces (overview, dependency wireframe, architecture,
-automation playback, technology intelligence, the coming grounded chat, evidence) run as live
-miniatures on the same data.
+## 🔄 Repository Analysis Pipeline
 
-Performance: the 3D scene is a separate lazy chunk (three.js ≈ 247 KB gzip), loaded after the
-page renders; until then, and on devices without WebGL or reporting ≤ 2 cores / ≤ 2 GB memory,
-a static drawing of the same import graph is shown. It is one canvas with a handful of draw calls
-(points, lines, packets, the traced path, layer rings) whose buffers are updated in place — no React re-renders per frame — and
-its render loop stops while the product, docs and trust sections are on screen. Pixel ratio
-adapts to measured performance. Phones get a separate composition (files only, no symbols or
-packages, no hover, cards under the scene). With reduced motion the scene renders on demand,
-cuts between chapters instead of morphing, and shows the traced path all at once. Measured in
-Chrome on an Apple M5: about 1–1.3 ms of main-thread work per frame (p95 ≈ 2.5 ms) with hover
-active.
+CodePilot's analysis process can be represented as a sequence of stages:
 
-`npm run hero:snapshot` regenerates the landing page data (files, symbols, imports, packages,
-architecture, technology intelligence, the traced flow, evidence) from a real analysis of this
-repository. Every figure and node on the page comes from that snapshot, and "Explore CodePilot"
-opens the live sample project (`/sample?view=architecture`).
+```mermaid
+flowchart TD
+    A[User Connects GitHub] --> B[Select Repository]
+    B --> C[Validate Access]
+    C --> D[Import Repository]
+    D --> E[Apply Exclusion Rules]
+    E --> F[Store Repository Snapshot]
+    F --> G[Build File Inventory]
+    G --> H[Analyze Source Code]
+    H --> I[Discover Dependencies]
+    H --> J[Detect Technologies]
+    H --> K[Trace Supported Execution Flows]
+    I --> L[Persist Analysis Results]
+    J --> L
+    K --> L
+    L --> M[Display Project Intelligence]
+    M --> N[Wireframe]
+    M --> O[Architecture]
+    M --> P[Automation]
+    M --> Q[Technology Intelligence]
+    M --> R[Code]
+```
 
-## Known limitations
+### Important design principles
+- Repository import and background analysis are treated as separate stages.
+- Stored files become available as soon as the import pipeline makes them available.
+- Analysis results remain associated with the relevant repository snapshot.
+- A failed analysis stage does not silently produce fabricated results.
+- Unsupported relationships are reported as unresolved rather than guessed.
 
-- Collective Intelligence only shows statistics once enough projects contribute (N ≥ 20 per
-  population); on a new installation every benchmark, insight and the State of Architecture
-  report are withheld, by design. Incident links are recorded manually in CodePilot — PagerDuty and
-  Opsgenie are labels for the source, not live integrations. Pseudonyms are keyed HMACs: the
-  collective dataset alone cannot be linked to a project, but the server (which holds the key)
-  can, which is what makes revocation possible. Revoked rows are deactivated, not deleted.
+---
 
-- Import extraction covers JS/TS (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`, `.vue`/`.svelte` script
-  blocks). Other languages appear as nodes marked "not analyzed", and are excluded from orphans.
-- Aliases defined only in bundler config (e.g. `vite.config` `resolve.alias`) are not read and are
-  reported as unresolved; tsconfig/jsconfig `paths` and package.json `imports` are.
-- Workspace packages whose manifest points only at build output (`dist/`) resolve as unresolved
-  with that reason — build output is intentionally not analyzed.
-- `import.meta.glob` and computed `import()`/`require()` are reported as diagnostics, not edges.
-- Ring bundling is hierarchical (category → directory → file); files are grouped by their
-  classified type, so the quality of the arcs depends on classification (many files land in
-  "Other" when nothing marks their role). External packages are not on the ring; the Layered
-  view shows them.
-- UI triggers, middleware and response shapes are pattern-based (React/JSX events and hooks;
-  Fastify/Express/Nest/FastAPI/Flask/Django/Go middleware). A trigger, middleware or response
-  that is not written in a recognisable form is left out, and the flow says so, rather than
-  being guessed. Response shapes are the returned literal's keys, a declared model, or the
-  returned expression — never an inferred payload.
-- Architecture detection is static. Connections through values computed at runtime (URLs from
-  config, dependency injection containers, reflection) are shown as unknown or not at all;
-  flows show code a request can reach, not proven runtime order. Latency is never shown
-  because it cannot be measured statically.
-- Method-level tracing for flows covers JS/TS and Python; other languages fall back to
-  file imports.
-- The Automation canvas shows at most 150 flows per snapshot (the analyzer’s cap), user actions
-  first. Snapshot comparison matches flows by id and step signature, so a flow whose
-  route or first step changes is reported as removed plus new rather than changed. Opening an
-  older snapshot computes its architecture on first use (then it is cached). Snapshots are
-  listed only for owned projects, not on the sample or share links.
-- Grounded AI answers are not implemented yet; the landing page marks that section
-  "Coming next".
-- GitHub OAuth apps have no read-only scope for private code, so the `repo` scope is requested.
-  A GitHub App with read-only contents permission is the natural next step.
+## 🛠️ Complete Tech Stack & Tools Used
+
+### Frontend
+| Technology | Purpose |
+| --- | --- |
+| [React](https://react.dev/) | Component-based user interface |
+| [TypeScript](https://www.typescriptlang.org/) | Static typing for frontend application code |
+| [Vite](https://vite.dev/) | Frontend development server and production build tooling |
+| [Tailwind CSS](https://tailwindcss.com/) | Utility-first styling, where configured |
+| [React Flow](https://reactflow.dev/) | Interactive node-and-edge visualizations, where used |
+| [Three.js](https://threejs.org/) | Three-dimensional landing-page visuals, where implemented |
+| [GitHub](https://github.com/) | Source repository hosting and repository integration |
+
+### Backend
+| Technology | Purpose |
+| --- | --- |
+| [Python](https://www.python.org/) | Backend programming language |
+| [FastAPI](https://fastapi.tiangolo.com/) | HTTP API framework |
+| [Uvicorn](https://www.uvicorn.org/) | ASGI server for running the FastAPI application |
+| [Pydantic](https://docs.pydantic.dev/) | Data validation and request/response schemas |
+| [SQLAlchemy](https://www.sqlalchemy.org/) | Database access and ORM, if configured in the current implementation |
+
+### Potential Supporting Infrastructure
+| Technology | Typical responsibility |
+| --- | --- |
+| [PostgreSQL](https://www.postgresql.org/) | Persistent relational metadata and analysis results |
+| [Redis](https://redis.io/) | Caching and queue-related infrastructure |
+| [Celery](https://docs.celeryq.dev/) | Background task processing |
+| [Amazon S3](https://aws.amazon.com/s3/) | Persistent object storage for repository files and artifacts |
+| [pgvector](https://github.com/pgvector/pgvector) | Vector similarity search when embedding-based retrieval is implemented |
+| [Docker](https://www.docker.com/) | Reproducible deployment and containerized services |
+
+---
+
+## 📂 Project Architecture
+
+The backend structure previously established for CodePilot follows a modular FastAPI organization:
+
+```
+CodePilot/
+│
+├── frontend/             # React + TypeScript + Vite application
+│   ├── public/           # Static public assets
+│   ├── src/
+│   │   ├── components/   # Reusable UI components
+│   │   ├── pages/        # Project and feature views
+│   │   ├── services/     # API client and frontend services
+│   │   ├── hooks/        # Reusable React hooks
+│   │   ├── utils/        # Shared utilities
+│   │   ├── App.tsx       # Root application
+│   │   └── main.tsx      # Frontend entry point
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── backend/
+│   ├── app/
+│   │   ├── models/       # Database models
+│   │   ├── routers/      # API route definitions
+│   │   ├── schemas/      # Request and response schemas
+│   │   ├── services/     # Business logic and analysis services
+│   │   ├── config.py     # Application configuration
+│   │   └── main.py       # FastAPI application entry point
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── requirements.txt
+│
+├── .gitignore
+├── .env.example
+└── README.md
+```
+
+> **Important:** This is a conceptual directory structure based on the known project organization. Reconcile it with the actual repository before using it as an exact file inventory.
+
+---
+
+## 🧩 Core Analysis Concepts
+
+### 1. Repository Snapshots
+A repository snapshot represents the version of a project being analyzed. Associating analysis results with a snapshot helps prevent relationships from one repository version being mixed with files from another.
+
+A snapshot can be associated with:
+- Repository identity.
+- Commit or revision metadata.
+- Stored file inventory.
+- Dependency analysis.
+- Architecture analysis.
+- Technology detection.
+- Execution-flow analysis.
+
+### 2. Evidence-Based Relationships
+CodePilot distinguishes confirmed relationships from inferences:
+
+| Confidence | Meaning |
+| --- | --- |
+| **Confirmed** | Directly supported by available source or structural evidence |
+| **Strong inference** | Supported by multiple related pieces of evidence |
+| **Possible** | Plausible, but not sufficiently established |
+| **Unknown** | The available evidence does not establish the relationship |
+
+For example, an explicit import statement can establish a file dependency. A connection between a frontend button and a backend database write may require tracing several additional steps. Unresolved relationships remain visible as unresolved rather than being represented as confirmed facts.
+
+### 3. Cross-Module Intelligence
+The primary modules share consistent repository and source references:
+
+```
+                  Repository Snapshot
+                           │
+                Shared Analysis Metadata
+           ┌───────────────┴───────────────┐
+           │                               │
+       Wireframe                      Architecture
+           │                               │
+           └───────────────┬───────────────┘
+                           │
+                       Automation
+                           │
+                 Technology Intelligence
+                           │
+                         Code
+```
+
+This design allows a developer to move from a visual relationship to its architectural role, execution context, technology usage, and source implementation.
+
+---
+
+## 🔌 API Architecture
+
+CodePilot uses FastAPI for its backend API layer. The backend is responsible for validating requests, enforcing authorization, interacting with persistent storage, and returning project-related information.
+
+### Expected API responsibility areas
+
+| Area | Responsibility |
+| --- | --- |
+| **Authentication** | Login callbacks, session handling, and account identity |
+| **Projects** | Project creation, listing, configuration, and deletion |
+| **Repository integration** | Repository selection, import, and synchronization |
+| **File access** | Authorized file listing, content retrieval, and search |
+| **Wireframe** | Dependency graph and relationship queries |
+| **Architecture** | Architectural components and connections |
+| **Automation** | Execution-flow discovery and inspection |
+| **Technology Intelligence** | Technology metadata and evidence-backed usage information |
+| **Background jobs** | Import and analysis status, where asynchronous processing is configured |
+
+### API documentation
+FastAPI can expose interactive API documentation when the corresponding documentation endpoints are enabled. During local development, check the backend's configured OpenAPI documentation route, commonly `/docs`.
+
+---
+
+## 🔐 Security and Authentication
+
+CodePilot handles private repositories, source code, project metadata, and user-specific information. Security is therefore a core architectural requirement.
+
+### Authentication
+- Support configured Google and GitHub login flows.
+- Validate authentication results on the backend.
+- Use secure session or token handling appropriate to the implementation.
+- Prevent unsafe account linking and unauthorized session reuse.
+
+### Authorization
+- Enforce project and workspace access on the backend.
+- Verify membership and permissions for every protected resource.
+- Prevent users from accessing another user's repositories, files, analysis results, and search responses.
+- Apply consistent authorization to background jobs and storage operations.
+
+### Credential Management
+- Keep OAuth client secrets, signing keys, database credentials, and private API keys out of frontend bundles.
+- Store production secrets in environment variables or a managed secret store.
+- Never commit populated `.env` files.
+- Rotate credentials that may have been exposed.
+
+### Repository Security
+- Treat imported repositories as untrusted input.
+- Validate file paths and protect against path traversal.
+- Render code as text rather than executable HTML.
+- Mask detected secrets before exposing source content.
+- Apply file-size and resource limits to protect import and analysis workers.
+
+### Data Persistence
+- User accounts, project metadata, and repository references should be stored in durable backend-managed storage.
+- Repository contents and generated artifacts should use storage appropriate to their size, durability, and access requirements.
+- Data persistence must be tested across application restarts, redeployments, and worker failures.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+Before running CodePilot locally, verify that you have:
+- [Git](https://git-scm.com/) installed.
+- [Node.js](https://nodejs.org/) and npm installed.
+- [Python](https://www.python.org/) installed at a version supported by the project's dependencies.
+- Access to the required GitHub OAuth configuration.
+- Google OAuth credentials if Google login is enabled.
+- A configured production-compatible or development database if required.
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/akhilshah179/CodePilot.git
+cd CodePilot
+```
+
+### 2. Configure Environment Variables
+Create the appropriate local environment files based on the actual frontend and backend configuration:
+
+```bash
+# Windows PowerShell
+Get-Content .env.example
+
+# macOS / Linux
+cat .env.example
+```
+
+### 3. Install Frontend Dependencies
+```bash
+# If frontend is in frontend/:
+cd frontend && npm install && cd ..
+
+# Or if at workspace root:
+npm install
+```
+
+### 4. Install Backend Dependencies
+```bash
+cd backend
+python -m venv .venv
+
+# Activate the environment:
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+# macOS / Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+cd ..
+```
+
+### 5. Start the Backend
+```bash
+cd backend
+uvicorn app.main:app --reload
+```
+
+### 6. Start the Frontend
+```bash
+# In frontend directory or root:
+npm run dev
+```
+
+### 7. Verify the Application
+Confirm that:
+- The frontend starts successfully.
+- The backend starts successfully.
+- Required database connections work.
+- Authentication callbacks are correctly configured.
+- Repository imports complete.
+- Stored files can be retrieved.
+- Analysis results are associated with the correct project.
+- Protected project data cannot be accessed by unauthorized users.
+
+---
+
+## ⚙️ Environment Configuration
+
+| Configuration | Purpose |
+| --- | --- |
+| **Database connection** | Connect the backend to persistent application metadata |
+| **Google OAuth client ID** | Identify the Google OAuth application |
+| **Google OAuth client secret** | Authenticate backend-side OAuth operations |
+| **GitHub OAuth client ID** | Identify the GitHub OAuth application |
+| **GitHub OAuth client secret** | Authenticate backend-side OAuth operations |
+| **Frontend origin** | Configure permitted browser origins |
+| **Backend signing key** | Sign or validate application credentials, if applicable |
+| **Repository storage configuration** | Configure persistent file and artifact storage |
+| **Redis connection** | Configure caching or queues, if used |
+| **AI provider key** | Configure AI features, if integrated |
+
+### Example placeholder format:
+```env
+# Example only — use the variable names required by your codebase.
+DATABASE_URL=your_database_connection_string
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+FRONTEND_URL=http://localhost:5175
+```
+
+### Production configuration
+Before deployment:
+- Configure the correct production OAuth callback URLs.
+- Restrict CORS to the intended frontend origins.
+- Use HTTPS for public traffic.
+- Configure persistent storage.
+- Run required database migrations.
+- Ensure background workers are deployed if the application depends on them.
+- Disable debug features that should not be public.
+- Verify backup and recovery procedures.
+
+---
+
+## 📈 Performance and Scalability
+
+CodePilot must account for repositories that vary substantially in size and complexity.
+
+### Repository Processing
+- Avoid loading entire repositories into frontend memory.
+- Apply file exclusions and resource limits during import.
+- Separate repository import from longer-running analysis tasks.
+- Make import and analysis operations safe to retry.
+- Associate results with the correct repository snapshot.
+
+### Graph Performance
+- Avoid rendering unnecessary dependency edges.
+- Support filtering and incremental graph exploration.
+- Consider graph layout computation outside the main UI thread for large repositories.
+- Keep node identities stable where possible.
+- Provide useful loading states for expensive analysis.
+
+### Code Browsing
+- Load file contents on demand.
+- Virtualize large file trees and source lines.
+- Index repository content when required for efficient search.
+- Respect authorization when retrieving cached content.
+- Invalidate stale results when repository snapshots change.
+
+### Backend Operations
+Where appropriate, use:
+- Database indexing and pagination.
+- Bounded concurrency.
+- Background workers.
+- Request timeouts and resource limits.
+- Caching with correct project and snapshot boundaries.
+- Structured logging and monitoring.
+
+---
+
+## 🧪 Testing and Verification
+
+A reliable codebase intelligence platform needs tests for both software correctness and the accuracy of its analysis.
+
+### Functional Verification
+- Repository import and file persistence.
+- Dependency graph generation.
+- Architecture relationships.
+- Execution-flow tracing.
+- Technology detection.
+- Code browsing and syntax highlighting.
+- Repository-wide search.
+- File and line navigation between modules.
+
+### Security Verification
+- Unauthorized API requests are rejected.
+- Users cannot access other users' project data.
+- OAuth callbacks are validated.
+- Secrets are not exposed in frontend bundles.
+- Malicious repository contents are rendered safely.
+- File paths cannot escape the intended repository boundary.
+- Background jobs preserve tenant isolation.
+
+### Reliability Verification
+- Failed imports expose useful error messages.
+- Retry operations do not create inconsistent project state.
+- Stored data survives application restarts and redeployments.
+- Large repositories remain usable.
+- Missing or unsupported analysis data is handled explicitly.
+
+### Analysis Accuracy
+Verify that:
+- Import relationships correspond to actual source evidence.
+- Circular dependencies represent genuine cycles.
+- Execution-flow connections are not invented.
+- Technology usage claims are supported by available evidence.
+- Unknown relationships remain marked as unresolved.
+- Source references point to the correct repository snapshot and line.
+
+---
+
+## 💡 Engineering Principles
+
+1. **Evidence Before Explanation**  
+   Important relationships and explanations should be traceable to source code, manifests, configuration, or other available evidence.
+2. **Shared Intelligence**  
+   Wireframe, Architecture, Automation, Technology Intelligence, and Code should use consistent project identifiers, file references, and repository snapshots.
+3. **Repository-Agnostic Analysis**  
+   CodePilot should analyze imported repositories rather than depending on hardcoded assumptions about one application or technology stack.
+4. **Honest Uncertainty**  
+   When the source does not establish a relationship, CodePilot should identify the uncertainty rather than fabricate a connection.
+5. **Security by Design**  
+   Authentication, authorization, tenant isolation, secret protection, and secure repository processing must be enforced throughout the application.
+6. **Persistent Project Context**  
+   Users should be able to return to their stored projects and access persisted data without relying on temporary browser state.
+7. **Usable Visualizations**  
+   Visualizations should help developers answer specific questions, not merely display large quantities of nodes and connections.
+
+---
+
+## 🛣️ Future Roadmap
+
+### Phase 1 — Repository Intelligence
+- Reliable repository imports and snapshots.
+- Accurate dependency analysis.
+- Architecture discovery.
+- Evidence-backed technology detection.
+- Source-code browsing and search.
+
+### Phase 2 — Deeper Execution Intelligence
+- More complete execution-flow tracing.
+- Better asynchronous and background-job discovery.
+- Improved cross-module navigation.
+- More efficient analysis of large repositories.
+
+### Phase 3 — AI Codebase Copilot
+- Natural-language questions about a repository.
+- Source-grounded answers with file and line references.
+- Contextual explanations of unfamiliar modules.
+- Search across code, architecture, and execution relationships.
+
+### Phase 4 — Change Impact Analysis
+- Identify files and features potentially affected by a change.
+- Trace dependency chains.
+- Connect changes to relevant tests and execution flows.
+- Generate evidence-backed risk reports.
+
+### Phase 5 — Engineering Reliability
+- Codebase health analysis.
+- Security and dependency-risk intelligence.
+- Pull-request review using repository context.
+- Safer, test-verified code-change assistance.
+
+---
+
+## 📄 License
+
+Specify the project's actual license here before publishing or distributing the repository.
+
+---
+
+<p align="center">
+<strong>CodePilot — Making complex codebases easier to understand.</strong><br />
+Built for developers who want to understand not just what code exists, but how the entire system works.
+</p>
