@@ -1,26 +1,37 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from '../config.ts';
 import { randomId } from '../crypto.ts';
 import { AppError } from '../errors.ts';
 import { GitHubClient } from '../github.ts';
 import type { AuthStore } from './store.ts';
 
+import type { RateLimiter } from '../rateLimit.ts';
+import { getClientKey } from '../rateLimit.ts';
+
 const GITHUB_SCOPES = 'repo read:org read:user user:email';
 
 /** Only same-origin relative paths are accepted as post-login destinations. */
 export function safeNext(next: unknown): string | undefined {
-  if (typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return undefined;
+  if (typeof next !== 'string') return undefined;
+  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\') || /[\x00-\x1f\s]/.test(next)) return undefined;
+  if (/^\/[\\/\s]/.test(next)) return undefined;
   return next;
 }
 
-export function registerAuthRoutes(app: FastifyInstance, config: Config, store: AuthStore) {
+export function registerAuthRoutes(app: FastifyInstance, config: Config, store: AuthStore, rateLimiter?: RateLimiter, codeStore?: { collectGarbage(): void }) {
   const callbackUrl = (provider: string) => `${config.appOrigin}/api/auth/${provider}/callback`;
   const failRedirect = (reply: FastifyReply, code: string) => reply.redirect(`${config.appOrigin}/signin?error=${encodeURIComponent(code)}`);
+
+  const checkAuthRateLimit = (request: FastifyRequest, reply: FastifyReply) => {
+    if (!rateLimiter) return;
+    const key = `auth:${getClientKey(request)}`;
+    rateLimiter.check(key, { max: 20, windowMs: 60_000 }, reply);
+  };
 
   app.get('/api/auth/providers', async () => ({
     github: !!(config.github.clientId && config.github.clientSecret),
     google: !!(config.google.clientId && config.google.clientSecret),
-    dev: !!config.devGithubToken,
+    dev: !config.production && !!config.devGithubToken,
   }));
 
   app.get('/api/me', async (request) => {
@@ -36,6 +47,19 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
     };
   });
 
+  app.delete('/api/me', async (request, reply) => {
+    const user = store.requireUser(request);
+    store.deleteUser(user.id);
+    codeStore?.collectGarbage();
+    store.destroySession(request, reply);
+    return { ok: true, deleted: true };
+  });
+
+  app.get('/api/me/export', async (request) => {
+    const user = store.requireUser(request);
+    return store.exportUserData(user.id);
+  });
+
   app.post('/api/auth/logout', async (request, reply) => {
     store.destroySession(request, reply);
     return { ok: true };
@@ -43,6 +67,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
 
   // --- GitHub OAuth -------------------------------------------------------
   app.get<{ Querystring: { intent?: string; next?: string } }>('/api/auth/github/start', async (request, reply) => {
+    checkAuthRateLimit(request, reply);
     if (!config.github.clientId || !config.github.clientSecret) return failRedirect(reply, 'github_not_configured');
     const user = store.userFromRequest(request);
     const intent = request.query.intent === 'connect' && user ? 'connect' : 'signin';
@@ -57,6 +82,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   });
 
   app.get<{ Querystring: { code?: string; state?: string; error?: string } }>('/api/auth/github/callback', async (request, reply) => {
+    checkAuthRateLimit(request, reply);
     const { code, state, error } = request.query;
     if (error) return failRedirect(reply, error === 'access_denied' ? 'github_denied' : 'oauth_failed');
     const saved = state ? store.consumeState(state, 'github') : null;
@@ -95,6 +121,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
 
   // --- Google OpenID Connect ----------------------------------------------
   app.get<{ Querystring: { next?: string } }>('/api/auth/google/start', async (request, reply) => {
+    checkAuthRateLimit(request, reply);
     if (!config.google.clientId || !config.google.clientSecret) return failRedirect(reply, 'google_not_configured');
     const nonce = randomId();
     const state = store.saveState({ provider: 'google', intent: 'signin', nonce, next: safeNext(request.query.next) });
@@ -110,6 +137,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   });
 
   app.get<{ Querystring: { code?: string; state?: string; error?: string } }>('/api/auth/google/callback', async (request, reply) => {
+    checkAuthRateLimit(request, reply);
     const { code, state, error } = request.query;
     if (error) return failRedirect(reply, 'oauth_failed');
     const saved = state ? store.consumeState(state, 'google') : null;
@@ -152,8 +180,9 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   });
 
   // --- Development sign-in --------------------------------------------------
-  app.post('/api/auth/dev', async (_request, reply) => {
-    if (!config.devGithubToken) throw new AppError('not_found', 'Not found', 404);
+  app.post('/api/auth/dev', async (request, reply) => {
+    checkAuthRateLimit(request, reply);
+    if (config.production || !config.devGithubToken) throw new AppError('not_found', 'Not found', 404);
     const gh = new GitHubClient(config.github.apiUrl, config.devGithubToken);
     const profile = await gh.user();
     const userId = store.upsertAccount({

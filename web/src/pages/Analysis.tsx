@@ -122,6 +122,12 @@ export function Analysis() {
         </h1>
         <p className="muted">
           {failed ? 'Analysis stopped.' : stage === 'complete' ? 'Analysis complete. Opening Project Home…' : 'Analyzing the repository. You can leave this page; the analysis keeps running.'}
+          {!failed && stage !== 'complete' && stage !== 'queued' && stage !== 'cloning' && (
+            <>
+              {' '}
+              <Link to={`/projects/${id}?view=code${analysisId ? `&analysisId=${encodeURIComponent(analysisId)}` : ''}`}>Browse the files now</Link>
+            </>
+          )}
         </p>
 
         <div className="analysis-grid">

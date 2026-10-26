@@ -32,109 +32,10 @@ import type {
   IntelConfidence,
   FlowStage,
   FlowIndex,
-  FlowType,
-  FlowCorrelation,
-  FlowJourney,
-  FlowHierarchy,
-  FlowHierarchyCounts,
-  HeroFlow,
-  HeroStage,
-  HeroJoin,
-  HeroJoinType,
-  CapabilityGroup,
-  NearDuplicateCluster,
-  GlobalMiddleware,
-  GlobalMiddlewareStep,
-  TraceCoverage,
-  UnresolvedStep,
-  UnresolvedStepReason,
-  FlowImportance,
-  FlowImportanceLevel,
-  AutomationOverview,
-  MainFlow,
-  MainFlowStage,
-  MainFlowJoin,
-  MainFlowFoldedMember,
-  MainFlowExplanation,
-  MainFlowsCoverage,
-  MainFlowCandidate,
-  MainFlowsOverview,
-  FlowV4,
-  FlowNode,
-  FlowEdge,
-  FlowNodeType,
-  FlowchartLane,
-  FlowEdgeKind,
-  FlowSummary,
-  EntryPointItem,
-  AutomationCoverageV4,
-  AutomationOverviewV4,
 } from '@codepilot/analyzer/architecture/types';
 
-export type {
-  FlowV4,
-  FlowNode,
-  FlowEdge,
-  FlowNodeType,
-  FlowchartLane,
-  FlowEdgeKind,
-  FlowSummary,
-  EntryPointItem,
-  AutomationCoverageV4,
-  AutomationOverviewV4,
-};
-
 export type { GraphEdge, GraphNode, GraphSummary, NodeType, EdgeKind, ClassificationEvidence, ExportEntry, FileDiagnostic, ScanStats };
-export type {
-  Architecture,
-  ArchEdge,
-  ArchNode,
-  BlastRadius,
-  Evidence,
-  Flow,
-  FlowLane,
-  FlowStep,
-  ArchitectureSummary,
-  Overlay,
-  PatternName,
-  Confidence,
-  Layer,
-  SystemLayer,
-  SystemLink,
-  SystemMap,
-  SystemNode,
-  TechIntel,
-  IntelConfidence,
-  FlowStage,
-  FlowIndex,
-  FlowType,
-  FlowCorrelation,
-  FlowJourney,
-  FlowHierarchy,
-  FlowHierarchyCounts,
-  HeroFlow,
-  HeroStage,
-  HeroJoin,
-  HeroJoinType,
-  CapabilityGroup,
-  NearDuplicateCluster,
-  GlobalMiddleware,
-  GlobalMiddlewareStep,
-  TraceCoverage,
-  UnresolvedStep,
-  UnresolvedStepReason,
-  FlowImportance,
-  FlowImportanceLevel,
-  AutomationOverview,
-  MainFlow,
-  MainFlowStage,
-  MainFlowJoin,
-  MainFlowFoldedMember,
-  MainFlowExplanation,
-  MainFlowsCoverage,
-  MainFlowCandidate,
-  MainFlowsOverview,
-};
+export type { Architecture, ArchEdge, ArchNode, BlastRadius, Evidence, Flow, FlowLane, FlowStep, ArchitectureSummary, Overlay, PatternName, Confidence, Layer, SystemLayer, SystemLink, SystemMap, SystemNode, TechIntel, IntelConfidence, FlowStage, FlowIndex };
 
 export interface ApiErrorBody {
   code: string;
@@ -334,6 +235,60 @@ export interface ShareLink {
   embedUrl: string;
 }
 
+/* ---- Code tab ---- */
+
+export type CodeState = 'ready' | 'storing' | 'empty' | 'failed' | 'pending' | 'not-stored';
+/** Compact explorer entry: path, size, language, lines, masked count; or a not-stored entry with its reason. */
+export interface CodeEntry {
+  p: string;
+  s?: number;
+  l?: string;
+  n?: number;
+  m?: number;
+  r?: string;
+  d?: 1;
+}
+export interface CodeTree {
+  state: CodeState;
+  snapshot: { analysisId: string; branch: string; commitSha: string | null; createdAt: string; analysisStatus: string; analysisStage: string; storedAt: string | null };
+  counts: { stored: number; notStored: number; notStoredDirectories: number; notStoredFiles: number; byReason: Record<string, number>; bytes: number };
+  truncated: boolean;
+  storeError: string | null;
+  failure: { analysisId: string; stage: string; code: string | null; message: string | null } | null;
+  reasons: Record<string, string>;
+  entries: CodeEntry[];
+  canRetry: boolean;
+}
+export type CodeFile =
+  | { path: string; stored: true; language: string; size: number; lines: number; maskedLines: number[]; content: string; analysisId: string }
+  | { path: string; stored: false; directory: boolean; reason: string; reasonText: string; size: number | null };
+export interface CodeOutline {
+  path: string;
+  language: string | null;
+  supported: boolean;
+  symbols: { name: string; kind: string; line: number; depth: number }[];
+}
+export interface CodeRelations {
+  status: 'ready' | 'pending' | 'unavailable';
+  importsAnalyzed: boolean;
+  importers: { path: string; line: number; specifier: string; symbols: string[]; typeOnly: boolean }[];
+  imports: { specifier: string; line: number; symbols: string[]; typeOnly: boolean; resolved: boolean; external: boolean; target: string | null; packageName: string | null; reason: string | null }[];
+}
+export interface CodeSearchResult {
+  query: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  results: { path: string; total: number; matches: { line: number; col: number; len: number; text: string; offset: number }[] }[];
+  filesSearched: number;
+  filesMatched: number;
+  matches: number;
+  truncated: boolean;
+}
+export interface CodeSnapshotQuery {
+  analysisId?: string;
+  commit?: string;
+}
+
 /** Where view data comes from: a project the user can access, or a read-only share token. */
 export interface DataSource {
   base: string;
@@ -380,6 +335,38 @@ export interface NodeDetails {
   entryPoint: string[] | null;
   orphan: boolean;
   cycles: number[];
+}
+
+/* ---------------------------------------------------------------- Automation Engine */
+
+export type { AutoNode, AutoEdge, AutoEvidence, AutoLane, AutoNodeType, AutoEdgeKind, MainFlow, FlowExplanation, ExplanationItem, CycleType, EntryRef, Diagnostics as AutomationDiagnostics } from '@codepilot/analyzer/automation/types';
+import type { MainFlow as AutoMainFlow, EntryRef as AutoEntryRef, Diagnostics as AutoDiagnostics, CycleType as AutoCycle } from '@codepilot/analyzer/automation/types';
+
+export interface AutomationFlow extends AutoMainFlow {
+  renamed: boolean;
+}
+
+export interface AutomationResponse {
+  schemaVersion: number;
+  /** The stored flows were made by another engine version and were rebuilt for this request. */
+  regenerated: boolean;
+  status: 'ok' | 'fallback' | 'partial' | 'empty';
+  projectType: string;
+  projectTypeLabel: string;
+  project: { name: string };
+  snapshot: { analysisId: string; branch: string; commitSha: string | null; finishedAt: string | null };
+  latestAnalysis: { status: string; error: { code: string | null; message: string | null } } | null;
+  flows: AutomationFlow[];
+  candidates: { id: string; key: string; name: string; cycle: AutoCycle; purpose: string; steps: number; confidence: AutoMainFlow['confidence']; partial: boolean; selected: boolean }[];
+  coverage: { total: number; shown: number; folded: number; omitted: number };
+  diagnostics: AutoDiagnostics;
+}
+
+export interface AutomationCoverage {
+  total: number;
+  shown: AutoEntryRef[];
+  folded: AutoEntryRef[];
+  omitted: AutoEntryRef[];
 }
 
 /* ---------------------------------------------------------------- Collective Intelligence */
@@ -533,6 +520,8 @@ export const api = {
   patternInsights: (id: string) => request<InsightsResponse>(`/api/projects/${enc(id)}/pattern-insights`),
   stateOfArchitecture: () => request<StateOfArchitecture>('/api/collective-intelligence/state-of-architecture'),
   collectiveSchema: () => request<CollectiveSchema>('/api/collective-intelligence/schema'),
+  replaceFlow: (id: string, flowId: string, key: string) => request<AutomationResponse>(`/api/projects/${enc(id)}/automation/flows/${enc(flowId)}/replace`, json({ key })),
+  renameFlow: (id: string, flowId: string, name: string | null) => request<AutomationResponse>(`/api/projects/${enc(id)}/automation/flows/${enc(flowId)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   incidentTag: (id: string, nodeId: string, body: { month?: string; source?: string; description?: string }) =>
     request<IncidentTagResult>(`/api/projects/${enc(id)}/graph/nodes/${enc(nodeId)}/incident-tag`, json(body)),
 };
@@ -548,65 +537,22 @@ export const data = {
   regenerate: (src: DataSource) => request<ArchitectureResponse>(`${src.base}/architecture/regenerate`, json({})),
   tool: (src: DataSource, id: string) => request<ToolDetails>(`${src.base}/architecture/tools/${enc(id)}`),
   /** Flows of the latest analysis, or of a specific snapshot. */
-  flows: (src: DataSource, analysisId?: string) =>
-    request<{
-      flows: Flow[];
-      journeys?: FlowJourney[];
-      hierarchy?: FlowHierarchy;
-      automation?: AutomationOverview;
-      heroFlow?: HeroFlow;
-      capabilities?: CapabilityGroup[];
-      globalMiddleware?: GlobalMiddleware;
-      traceCoverage?: TraceCoverage;
-      evidence: Record<string, Evidence>;
-    }>(`${src.base}/architecture/flows${q({ analysisId })}`),
+  flows: (src: DataSource, analysisId?: string) => request<{ flows: Flow[]; evidence: Record<string, Evidence> }>(`${src.base}/architecture/flows${q({ analysisId })}`),
   intelligence: (src: DataSource) => request<IntelligenceResponse>(`${src.base}/architecture/intelligence`),
+  automation: (src: DataSource) => request<AutomationResponse>(`${src.base}/automation/flows`),
+  automationCoverage: (src: DataSource) => request<AutomationCoverage>(`${src.base}/automation/coverage`),
   archSummary: (src: DataSource) => request<{ summary: ArchitectureSummary; evidence: Record<string, Evidence> }>(`${src.base}/architecture/summary`),
   archExportUrl: (src: DataSource, format: 'png' | 'svg' | 'pdf' | 'mermaid' | 'json', overlay: Overlay) => `${src.base}/architecture/export${q({ format, overlay })}`,
-  /** Automation Engine V2 endpoints */
-  automationOverview: (src: DataSource) => request<AutomationOverview>(`${src.base}/automation/overview`),
-  automationGroup: (src: DataSource, groupId: string) =>
-    request<{ group: CapabilityGroup; memberFlows: Flow[]; mergedPatterns: NearDuplicateCluster[]; evidence: Record<string, Evidence> }>(
-      `${src.base}/automation/groups/${enc(groupId)}`,
-    ),
-  automationFlows: (src: DataSource) =>
-    request<{ flows: Flow[]; journeys?: FlowJourney[]; capabilities?: CapabilityGroup[]; hierarchy?: FlowHierarchy; evidence: Record<string, Evidence> }>(
-      `${src.base}/automation/flows`,
-    ),
-  automationFlow: (src: DataSource, flowId: string) => request<{ flow: Flow; evidence: Record<string, Evidence> }>(`${src.base}/automation/flows/${enc(flowId)}`),
-  pinHeroFlow: (src: DataSource, flowId: string) => request<{ ok: true; heroFlow: HeroFlow }>(`${src.base}/automation/hero`, json({ flowId })),
-  /** Automation Engine V3 Four Main Flows endpoints */
-  mainFlows: (src: DataSource, analysisId?: string) =>
-    request<MainFlowsOverview>(`${src.base}/automation/main-flows${q({ analysisId })}`),
-  replaceMainFlow: (src: DataSource, flowId: string, replacementFlowId: string) =>
-    request<{ ok: true; mainFlows: MainFlowsOverview }>(`${src.base}/automation/main-flows/${enc(flowId)}/replace`, json({ replacementFlowId })),
-  renameMainFlow: (src: DataSource, flowId: string, name: string) =>
-    request<{ ok: true; mainFlows: MainFlowsOverview }>(`${src.base}/automation/main-flows/${enc(flowId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    }),
-  /** Automation Engine V4 Real Flowcharts endpoints */
-  automationFlowsV4: (src: DataSource, analysisId?: string) =>
-    request<{ flows: FlowV4[]; coverage: AutomationCoverageV4; globalMiddleware: GlobalMiddleware; evidence: Record<string, Evidence> }>(
-      `${src.base}/automation/flows${q({ analysisId })}`,
-    ),
-  automationCoverageV4: (src: DataSource, analysisId?: string) =>
-    request<AutomationCoverageV4>(`${src.base}/automation/coverage${q({ analysisId })}`),
-  replaceAutomationFlowV4: (src: DataSource, flowId: string, replacementFlowId: string) =>
-    request<{ ok: true; flows: FlowV4[]; coverage: AutomationCoverageV4; globalMiddleware: GlobalMiddleware; evidence: Record<string, Evidence> }>(
-      `${src.base}/automation/flows/${enc(flowId)}/replace`,
-      json({ replacementFlowId }),
-    ),
-  renameAutomationFlowV4: (src: DataSource, flowId: string, name: string) =>
-    request<{ ok: true; flows: FlowV4[]; coverage: AutomationCoverageV4; globalMiddleware: GlobalMiddleware; evidence: Record<string, Evidence> }>(
-      `${src.base}/automation/flows/${enc(flowId)}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      },
-    ),
+};
+
+/** Code tab: always pinned to one snapshot (analysis) once the tree has resolved it. */
+export const code = {
+  tree: (projectId: string, snap: CodeSnapshotQuery) => request<CodeTree>(`/api/projects/${enc(projectId)}/code${q({ ...snap })}`),
+  file: (projectId: string, analysisId: string, path: string) => request<CodeFile>(`/api/projects/${enc(projectId)}/code/file${q({ analysisId, path })}`),
+  outline: (projectId: string, analysisId: string, path: string) => request<CodeOutline>(`/api/projects/${enc(projectId)}/code/outline${q({ analysisId, path })}`),
+  relations: (projectId: string, analysisId: string, path: string) => request<CodeRelations>(`/api/projects/${enc(projectId)}/code/relations${q({ analysisId, path })}`),
+  search: (projectId: string, analysisId: string, query: string, opts: { caseSensitive: boolean; wholeWord: boolean }, signal?: AbortSignal) =>
+    request<CodeSearchResult>(`/api/projects/${enc(projectId)}/code/search${q({ analysisId, q: query, case: opts.caseSensitive ? 1 : undefined, word: opts.wholeWord ? 1 : undefined })}`, { signal }),
 };
 
 /** Full-page navigations for OAuth (the server redirects to the provider). */

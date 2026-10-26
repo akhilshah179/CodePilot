@@ -77,3 +77,80 @@ export function credentialLines(text: string): number[] {
   }
   return [...lines].sort((a, b) => a - b);
 }
+
+/** What replaces a masked value in stored and served code. */
+export const MASK = '‹masked›';
+
+/*
+ * Masking for code that is shown to people (the Code tab, its search and copy). Broader than the
+ * credential patterns above: it also hides the value of an assignment whose name says it is a
+ * secret, passwords in connection URLs and JWTs. Only the value is replaced, so lines, names and
+ * structure stay readable and line numbers never move.
+ */
+const SECRET_NAME = String.raw`[A-Za-z0-9_.-]*(?:secret|token|passw(?:or)?d|pwd|api[_-]?key|apikey|access[_-]?key|private[_-]?key|auth[_-]?key|credential)[A-Za-z0-9_.-]*`;
+const SECRET_ASSIGNMENT = new RegExp(String.raw`(\b${SECRET_NAME}["']?\s*(?::|=|:=|=>)\s*)(["'\`])([^"'\`\s]{8,})\2`, 'gi');
+const SECRET_ENV_LINE = new RegExp(String.raw`^(\s*(?:export\s+)?${SECRET_NAME}\s*=\s*)([^\s"'#;]{8,})\s*$`, 'gim');
+const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@'"`]+:)([^\s@/'"`]{3,})@/gi;
+const JWT = /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
+
+/**
+ * A value that looks generated rather than a word, a placeholder or code: secrets do not contain
+ * regex or expression punctuation, so patterns and expressions assigned to secret-named variables
+ * stay readable.
+ */
+const secretLooking = (v: string) =>
+  !/^[a-z]+(?:[-_.][a-z]+)*$/i.test(v) && !/^\$\{?[A-Z_]+\}?$/.test(v) && !/^<[^>]+>$/.test(v) && !/^x{6,}$/i.test(v) && !/[\\()[\]|*{}<>,;\s]/.test(v) && !v.includes(MASK);
+/** An unquoted value (.env style) also needs letters and digits, and is not a member access like `a.b.c`. */
+const bareSecretLooking = (v: string) => secretLooking(v) && /\d/.test(v) && /[A-Za-z]/.test(v) && !/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(v);
+
+export interface MaskResult {
+  text: string;
+  /** Number of values replaced. */
+  count: number;
+  /** 1-based lines that had a value replaced. */
+  lines: number[];
+}
+
+export function maskSecrets(text: string): MaskResult {
+  const hits: { start: number; end: number }[] = [];
+  const collect = (re: RegExp, group: (m: RegExpExecArray) => { start: number; end: number } | null) => {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const h = group(m);
+      if (h) hits.push(h);
+      if (m[0].length === 0) re.lastIndex++;
+    }
+  };
+  for (const re of CREDENTIAL_PATTERNS) collect(re, (m) => ({ start: m.index, end: m.index + m[0].length }));
+  collect(JWT, (m) => ({ start: m.index, end: m.index + m[0].length }));
+  collect(SECRET_ASSIGNMENT, (m) => (secretLooking(m[3]) ? { start: m.index + m[1].length + 1, end: m.index + m[1].length + 1 + m[3].length } : null));
+  collect(SECRET_ENV_LINE, (m) => (bareSecretLooking(m[2]) ? { start: m.index + m[1].length, end: m.index + m[1].length + m[2].length } : null));
+  collect(URL_PASSWORD, (m) => (m[2] !== MASK && !/^\$\{?[A-Z_]+\}?$/.test(m[2]) ? { start: m.index + m[1].length, end: m.index + m[1].length + m[2].length } : null));
+  if (!hits.length) return { text, count: 0, lines: [] };
+
+  // Merge overlapping ranges, then rebuild the text once.
+  hits.sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: { start: number; end: number }[] = [];
+  for (const h of hits) {
+    const last = merged[merged.length - 1];
+    if (last && h.start < last.end) last.end = Math.max(last.end, h.end);
+    else merged.push({ ...h });
+  }
+  let out = '';
+  let at = 0;
+  const lines = new Set<number>();
+  let line = 1;
+  let scanned = 0;
+  for (const h of merged) {
+    for (let i = text.indexOf('\n', scanned); i >= 0 && i < h.start; i = text.indexOf('\n', i + 1)) {
+      line++;
+      scanned = i + 1;
+    }
+    lines.add(line);
+    out += text.slice(at, h.start) + MASK;
+    at = h.end;
+  }
+  out += text.slice(at);
+  return { text: out, count: merged.length, lines: [...lines].sort((a, b) => a - b) };
+}

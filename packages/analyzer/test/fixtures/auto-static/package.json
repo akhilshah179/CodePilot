@@ -1,0 +1,1 @@
+{ "name": "book-finder", "private": true, "dependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" }, "devDependencies": { "vite": "^8.0.0" }, "scripts": { "dev": "vite" } }

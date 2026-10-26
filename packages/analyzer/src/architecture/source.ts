@@ -2,6 +2,7 @@ import { credentialLines } from '../secrets.ts';
 import type { ExportEntry } from '../types.ts';
 import { CATALOG, CATALOG_BY_ID, toolForScheme, toolsForModule, type CatalogEntry } from './catalog.ts';
 import { annotateClientFunctions, scanMiddleware, scanResponse, scanUiTriggers, type LifecycleFile } from './lifecycleFacts.ts';
+import { scanDecisions } from './decisions.ts';
 import { dirOf, escapeRegExp, joinPath, parseUrlish, snippet, stripComments, type CommentStyle } from './text.ts';
 import type {
   CallFact,
@@ -13,6 +14,7 @@ import type {
   HttpMethod,
   InternalImportFact,
   MiddlewareFact,
+  DecisionFact,
   ModuleImportFact,
   MountFact,
   OpKind,
@@ -80,6 +82,7 @@ export interface SourceScanOutput {
   httpCalls: HttpCallFact[];
   uiTriggers: UiTriggerFact[];
   middleware: MiddlewareFact[];
+  decisions: DecisionFact[];
   envRefs: EnvRefFact[];
   definitions: DefinitionFact[];
   configs: ConfigFact[];
@@ -354,7 +357,7 @@ function otherImports(lang: SourceLanguage, code: string[], raw: string[]): Pars
 // --- Main -------------------------------------------------------------------------------------------------------------------
 
 export function scanSources(input: SourceScanInput): SourceScanOutput {
-  const out: SourceScanOutput = { imports: [], internalImports: [], symbols: [], clients: [], calls: [], routes: [], mounts: [], httpCalls: [], uiTriggers: [], middleware: [], envRefs: [], definitions: [], configs: [], secrets: [] };
+  const out: SourceScanOutput = { imports: [], internalImports: [], symbols: [], clients: [], calls: [], routes: [], mounts: [], httpCalls: [], uiTriggers: [], middleware: [], decisions: [], envRefs: [], definitions: [], configs: [], secrets: [] };
   const states = new Map<string, FileState>();
   const pyFiles = new Set([...input.repoFiles].filter((f) => f.endsWith('.py')));
 
@@ -445,6 +448,7 @@ export function scanSources(input: SourceScanInput): SourceScanOutput {
     scanEnv(st, out);
     scanRoutes(st, out, input.declared);
     scanMiddleware(st, out.middleware);
+    scanDecisions({ path: src.path, lang: src.lang, code: st.code, raw: st.raw }, out.decisions);
     scanDefinitions(st, out);
     scanConfigLines(src.path, code, raw, out, st.tools);
     for (const line of credentialLines(src.text)) out.secrets.push({ file: src.path, line, kind: 'credential-pattern' });

@@ -22,9 +22,27 @@ export interface CloneOptions {
  * so it cannot leak through process listings, logs or the cloned repository.
  */
 export async function cloneRepository(opts: CloneOptions): Promise<void> {
+  if (
+    typeof opts.branch !== 'string' ||
+    opts.branch.startsWith('-') ||
+    opts.branch.includes('..') ||
+    opts.branch.includes('//') ||
+    opts.branch.endsWith('/') ||
+    opts.branch.endsWith('.') ||
+    opts.branch.includes('@{') ||
+    /[\x00-\x1f\s~^:?*[\\]/.test(opts.branch)
+  ) {
+    throw new AppError('bad_request', 'Invalid branch name.', 400);
+  }
+  if (typeof opts.url !== 'string' || opts.url.startsWith('-') || /[\x00-\x1f]/.test(opts.url)) {
+    throw new AppError('bad_request', 'Invalid repository URL.', 400);
+  }
+
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    SystemRoot: process.env.SystemRoot,
     GIT_TERMINAL_PROMPT: '0',
     GIT_LFS_SKIP_SMUDGE: '1',
     GIT_CONFIG_NOSYSTEM: '1',

@@ -1,19 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import {
-  ARCH_DETECTOR_VERSION,
-  ARCH_EXTRACTOR_VERSION,
-  detectArchitecture,
-  type Architecture,
-  type ArchitectureFacts,
-  type ArchNode,
-  type AutomationCoverageV4,
-  type AutomationOverviewV4,
-  type Evidence,
-  type Flow,
-  type FlowV4,
-  type GlobalMiddleware,
-  type MainFlowsOverview,
-} from '@codepilot/analyzer/architecture';
+import { ARCH_DETECTOR_VERSION, ARCH_EXTRACTOR_VERSION, detectArchitecture, type Architecture, type ArchitectureFacts, type ArchNode, type Evidence, type Flow } from '@codepilot/analyzer/architecture';
 import { randomId } from './crypto.ts';
 import { now, type Db } from './db.ts';
 import { AppError } from './errors.ts';
@@ -119,7 +105,7 @@ export class ArchitectureStore {
     try {
       db.prepare(
         'INSERT INTO architectures (id, project_id, analysis_id, cache_key, commit_sha, detector_version, status, layers_json, summary_json, blast_json, generated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run(id, projectId, analysisId, key, commitSha, arch.version, 'complete', JSON.stringify({ layers: arch.layers, repository: arch.repository, system: arch.system, technologies: arch.technologies, mainFlows: arch.mainFlows, flowsV4: arch.flowsV4, automationV4: arch.automationV4 }), JSON.stringify(arch.summary), JSON.stringify(arch.blast), arch.generatedAt, now());
+      ).run(id, projectId, analysisId, key, commitSha, arch.version, 'complete', JSON.stringify({ layers: arch.layers, repository: arch.repository, system: arch.system, technologies: arch.technologies }), JSON.stringify(arch.summary), JSON.stringify(arch.blast), arch.generatedAt, now());
       const ev = db.prepare('INSERT INTO evidence (architecture_id, id, kind, file, line, snippet, detail) VALUES (?, ?, ?, ?, ?, ?, ?)');
       for (const e of Object.values(arch.evidence)) ev.run(id, e.id, e.kind, e.file, e.line ?? null, e.snippet ?? null, e.detail);
       const tool = db.prepare('INSERT INTO architecture_tools (architecture_id, id, kind, name, version, category, layer, confidence, role, ord, data_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -138,22 +124,6 @@ export class ArchitectureStore {
           step.run(id, f.id, s.step, s.node, s.file, s.line ?? null, s.mode, s.explanation, JSON.stringify(s.evidence), s.edge ?? null, s.latencyMs ?? null, JSON.stringify(extra));
         }
       });
-
-      if (arch.flowsV4) {
-        const flowV4Stmt = db.prepare('INSERT OR REPLACE INTO flows_v4 (id, project_id, name, summary, coverage, confidence, pinned_by_user, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-        const nodeV4Stmt = db.prepare('INSERT OR REPLACE INTO flow_nodes_v4 (id, flow_id, project_id, type, label, file, line, snippet_ref, tools_json, lane) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        const edgeV4Stmt = db.prepare('INSERT OR REPLACE INTO flow_edges_v4 (id, flow_id, project_id, source, target, kind, label, evidence_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-        arch.flowsV4.forEach((f) => {
-          flowV4Stmt.run(f.id, projectId, f.name, f.summary.whatItDoes, f.coverage ?? 0, f.confidence, f.pinnedByUser ? 1 : 0, now());
-          for (const n of f.nodes) {
-            nodeV4Stmt.run(n.id, f.id, projectId, n.type, n.label, n.file, n.line ?? null, n.decisionExpr ?? null, JSON.stringify(n.tools), n.lane);
-          }
-          for (const e of f.edges) {
-            edgeV4Stmt.run(e.id, f.id, projectId, e.source, e.target, e.kind, e.label ?? null, JSON.stringify(e.evidence));
-          }
-        });
-      }
-
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
@@ -167,15 +137,7 @@ export class ArchitectureStore {
     const hit = this.cache.get(row.id);
     if (hit) return hit;
     const { db } = this;
-    const meta = JSON.parse(row.layers_json ?? '{}') as {
-      layers: Architecture['layers'];
-      repository: Architecture['repository'];
-      system?: Architecture['system'];
-      technologies?: Architecture['technologies'];
-      mainFlows?: MainFlowsOverview;
-      flowsV4?: FlowV4[];
-      automationV4?: AutomationOverviewV4;
-    };
+    const meta = JSON.parse(row.layers_json ?? '{}') as { layers: Architecture['layers']; repository: Architecture['repository']; system?: Architecture['system']; technologies?: Architecture['technologies'] };
     const evidence: Record<string, Evidence> = {};
     for (const e of db.prepare('SELECT * FROM evidence WHERE architecture_id = ? ORDER BY id').all(row.id) as unknown as { id: string; kind: Evidence['kind']; file: string; line: number | null; snippet: string | null; detail: string }[]) {
       evidence[e.id] = { id: e.id, kind: e.kind, file: e.file, line: e.line ?? undefined, snippet: e.snippet ?? undefined, detail: e.detail };
@@ -210,124 +172,9 @@ export class ArchitectureStore {
       blast: JSON.parse(row.blast_json ?? '{}'),
       system: meta.system ?? { layers: [], nodes: [], links: [], groups: [] },
       technologies: meta.technologies ?? [],
-      mainFlows: meta.mainFlows,
-      flowsV4: meta.flowsV4,
-      automationV4: meta.automationV4,
     };
     this.remember(row.id, arch);
     return arch;
-  }
-
-  getFlowsV4(projectId: string, rec: ArchitectureRecord): { flows: FlowV4[]; coverage: AutomationCoverageV4; globalMiddleware: GlobalMiddleware; evidence: Record<string, Evidence> } {
-    const a = rec.architecture;
-    const baseFlows = a.flowsV4 ?? [];
-    const baseCoverage = a.automationV4?.coverage ?? {
-      totalEntryPoints: 0,
-      shownCount: 0,
-      foldedCount: 0,
-      omittedCount: 0,
-      shown: [],
-      folded: [],
-      omitted: [],
-    };
-    const globalMiddleware = a.automationV4?.globalMiddleware ?? {
-      steps: [],
-      label: 'EVERY REQUEST PASSES THROUGH',
-      evidence: [],
-    };
-
-    const rows = this.db.prepare('SELECT flow_id, replacement_flow_id, custom_name FROM main_flow_customizations WHERE project_id = ?').all(projectId) as unknown as { flow_id: string; replacement_flow_id: string | null; custom_name: string | null }[];
-    if (!rows.length) {
-      return { flows: baseFlows, coverage: baseCoverage, globalMiddleware, evidence: a.evidence };
-    }
-
-    const byFlowId = new Map(rows.map((r) => [r.flow_id, r]));
-    const flows = baseFlows.map((f) => {
-      const custom = byFlowId.get(f.id);
-      if (!custom) return f;
-      const copy = { ...f };
-      if (custom.replacement_flow_id) {
-        const replacement = (copy.allCandidates ?? []).find((c) => c.id === custom.replacement_flow_id);
-        if (replacement) {
-          copy.id = replacement.id;
-          copy.name = custom.custom_name ?? replacement.name;
-          copy.summary = replacement.summary;
-          copy.purpose = replacement.purpose;
-        }
-      }
-      if (custom.custom_name) {
-        copy.name = custom.custom_name;
-        copy.customName = custom.custom_name;
-        copy.isCustomRenamed = true;
-      }
-      return copy;
-    });
-
-    return { flows, coverage: baseCoverage, globalMiddleware, evidence: a.evidence };
-  }
-
-  getCoverageV4(projectId: string, rec: ArchitectureRecord): AutomationCoverageV4 {
-    return this.getFlowsV4(projectId, rec).coverage;
-  }
-
-  replaceFlowV4(projectId: string, flowId: string, replacementFlowId: string): void {
-    this.replaceMainFlow(projectId, flowId, replacementFlowId);
-  }
-
-  renameFlowV4(projectId: string, flowId: string, name: string): void {
-    this.renameMainFlow(projectId, flowId, name);
-  }
-
-  getMainFlows(projectId: string, rec: ArchitectureRecord): MainFlowsOverview {
-    const a = rec.architecture;
-    const base = a.mainFlows ?? {
-      flows: [],
-      coverage: { totalEntryPoints: 0, coveredEntryPoints: 0, minorFoldedOrOmittedCount: 0, coveragePercent: 100, foldedItems: [] },
-      globalMiddleware: a.globalMiddleware ?? { steps: [], label: 'EVERY REQUEST PASSES THROUGH', evidence: [] },
-      allFlowCandidates: [],
-      evidence: a.evidence,
-    };
-    const rows = this.db.prepare('SELECT flow_id, replacement_flow_id, custom_name FROM main_flow_customizations WHERE project_id = ?').all(projectId) as unknown as { flow_id: string; replacement_flow_id: string | null; custom_name: string | null }[];
-    if (!rows.length) return base;
-
-    const byFlowId = new Map(rows.map((r) => [r.flow_id, r]));
-    const flows = base.flows.map((f) => {
-      const custom = byFlowId.get(f.id);
-      if (!custom) return f;
-      const flowObj = { ...f };
-      if (custom.replacement_flow_id) {
-        const replacement = base.allFlowCandidates.find((c) => c.id === custom.replacement_flow_id);
-        if (replacement) {
-          flowObj.id = replacement.id;
-          flowObj.name = custom.custom_name ?? replacement.name;
-          flowObj.purpose = replacement.purpose;
-        }
-      }
-      if (custom.custom_name) {
-        flowObj.name = custom.custom_name;
-        flowObj.customName = custom.custom_name;
-        flowObj.isCustomRenamed = true;
-      }
-      return flowObj;
-    });
-
-    return { ...base, flows };
-  }
-
-  replaceMainFlow(projectId: string, flowId: string, replacementFlowId: string): void {
-    this.db.prepare(
-      `INSERT INTO main_flow_customizations (project_id, flow_id, replacement_flow_id, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(project_id, flow_id) DO UPDATE SET replacement_flow_id = excluded.replacement_flow_id, updated_at = excluded.updated_at`,
-    ).run(projectId, flowId, replacementFlowId, now());
-  }
-
-  renameMainFlow(projectId: string, flowId: string, name: string): void {
-    this.db.prepare(
-      `INSERT INTO main_flow_customizations (project_id, flow_id, custom_name, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(project_id, flow_id) DO UPDATE SET custom_name = excluded.custom_name, updated_at = excluded.updated_at`,
-    ).run(projectId, flowId, name, now());
   }
 
   private remember(id: string, arch: Architecture) {

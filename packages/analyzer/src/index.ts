@@ -288,3 +288,7 @@ async function analyze(root: string, opts: AnalyzeOptions, collectFacts: boolean
   };
   return { graph, facts };
 }
+export { walkRepositoryFiles, STORE_EXCLUSION_TEXT, type RepoEntry, type StoreExclusion } from './repoFiles.ts';
+export { outlineOf, type Outline, type OutlineSymbol, type OutlineKind } from './outline.ts';
+export { maskSecrets, MASK } from './secrets.ts';
+export { ANALYZABLE_LANGUAGES } from './languages.ts';

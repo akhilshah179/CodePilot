@@ -13,6 +13,7 @@ import './styles/architecture-v3.css';
 import './styles/intelligence.css';
 import './styles/automation.css';
 import './styles/collective.css';
+import './styles/code.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router';

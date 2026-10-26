@@ -9,6 +9,35 @@ import { AppError } from '../errors.ts';
 import { GitHubClient } from '../github.ts';
 import { isLayout, nodeDetails, selectSubgraph, type GraphIndex, type GraphStore } from '../graphStore.ts';
 import type { AnalysisEvent, AnalysisRunner } from '../jobs/runner.ts';
+import { RbacService, type Permission } from '../auth/rbac.ts';
+import { getClientKey, type RateLimiter } from '../rateLimit.ts';
+import type { CodeStore } from '../codeStore.ts';
+
+const GITHUB_OWNER_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
+const GITHUB_REPO_RE = /^[a-zA-Z0-9_.-]{1,100}$/;
+const GIT_BRANCH_RE = /^(?!-)[a-zA-Z0-9_./-]{1,250}$/;
+
+export function validateRepoInput(owner: unknown, repo: unknown, branch: unknown): { owner: string; repo: string; branch: string } {
+  if (typeof owner !== 'string' || !GITHUB_OWNER_RE.test(owner)) {
+    throw new AppError('bad_request', 'Invalid GitHub owner or organization name.', 400);
+  }
+  if (typeof repo !== 'string' || !GITHUB_REPO_RE.test(repo) || repo === '.' || repo === '..') {
+    throw new AppError('bad_request', 'Invalid GitHub repository name.', 400);
+  }
+  if (
+    typeof branch !== 'string' ||
+    !GIT_BRANCH_RE.test(branch) ||
+    branch.includes('..') ||
+    branch.includes('//') ||
+    branch.endsWith('/') ||
+    branch.endsWith('.') ||
+    branch.includes('@{') ||
+    /[\x00-\x1f\s~^:?*[\\]/.test(branch)
+  ) {
+    throw new AppError('bad_request', 'Invalid branch name.', 400);
+  }
+  return { owner, repo, branch };
+}
 
 export interface ProjectRow {
   id: string;
@@ -53,11 +82,12 @@ type GraphQueryString = { analysisId?: string; layout?: string; types?: string; 
 
 /** What other route modules (architecture, shares) reuse from the project API. */
 export interface ProjectsApi {
-  getProject(request: FastifyRequest, id: string): ProjectRow;
-  completedGraph(request: FastifyRequest<{ Querystring: { analysisId?: string } }>, projectId: string): GraphContext;
+  getProject(request: FastifyRequest, id: string, permission?: Permission): ProjectRow;
+  completedGraph(request: FastifyRequest<{ Querystring: { analysisId?: string } }>, projectId: string, permission?: Permission): GraphContext;
   /** A specific completed analysis, without access checks (callers must have checked access). */
   contextFor(projectId: string, analysisId: string): GraphContext;
   graphMeta(project: ProjectRow, analysis: AnalysisRow): { project: ReturnType<typeof projectJson>; analysis: { id: string; branch: string; commitSha: string | null; finishedAt: string | null } };
+  rbac: RbacService;
   handlers: {
     graph(ctx: GraphContext, q: GraphQueryString): unknown;
     layout(ctx: GraphContext, q: GraphQueryString): unknown;
@@ -98,14 +128,28 @@ function analysisJson(a: AnalysisRow | undefined) {
   };
 }
 
-export function registerProjectRoutes(app: FastifyInstance, config: Config, db: Db, auth: AuthStore, runner: AnalysisRunner, graphs: GraphStore): ProjectsApi {
-  const getProject = (request: FastifyRequest, id: string): ProjectRow => {
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  config: Config,
+  db: Db,
+  auth: AuthStore,
+  runner: AnalysisRunner,
+  graphs: GraphStore,
+  rateLimiter?: RateLimiter,
+  codeStore?: CodeStore,
+): ProjectsApi {
+  const rbac = new RbacService(db);
+
+  const getProject = (request: FastifyRequest, id: string, permission: Permission = 'project:view'): ProjectRow => {
     const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined;
     if (!p) throw new AppError('not_found', 'Project not found.', 404);
     if (p.user_id !== null) {
       const user = auth.userFromRequest(request);
-      // Other users' projects are indistinguishable from missing ones.
-      if (!user || user.id !== p.user_id) throw new AppError('not_found', 'Project not found.', 404);
+      rbac.requirePermission(p.id, user?.id, permission);
+    } else {
+      if (permission !== 'project:view' && permission !== 'code:view' && permission !== 'code:search' && permission !== 'analysis:view') {
+        throw new AppError('forbidden', 'The sample project is read-only.', 403);
+      }
     }
     return p;
   };
@@ -115,8 +159,8 @@ export function registerProjectRoutes(app: FastifyInstance, config: Config, db: 
       ? db.prepare('SELECT * FROM analyses WHERE project_id = ? AND status = ? ORDER BY created_at DESC LIMIT 1').get(projectId, status)
       : db.prepare('SELECT * FROM analyses WHERE project_id = ? ORDER BY created_at DESC LIMIT 1').get(projectId)) as AnalysisRow | undefined;
 
-  const completedGraph = (request: FastifyRequest<{ Querystring: { analysisId?: string } }>, projectId: string) => {
-    const project = getProject(request, projectId);
+  const completedGraph = (request: FastifyRequest<{ Querystring: { analysisId?: string } }>, projectId: string, permission: Permission = 'project:view') => {
+    const project = getProject(request, projectId, permission);
     const analysis = request.query.analysisId
       ? (db.prepare("SELECT * FROM analyses WHERE id = ? AND project_id = ? AND status = 'complete'").get(request.query.analysisId, projectId) as AnalysisRow | undefined)
       : latestAnalysis(projectId, 'complete');
@@ -133,16 +177,23 @@ export function registerProjectRoutes(app: FastifyInstance, config: Config, db: 
 
   app.get('/api/projects', async (request) => {
     const user = auth.requireUser(request);
-    const rows = db.prepare('SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC').all(user.id) as unknown as ProjectRow[];
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT p.* FROM projects p
+         LEFT JOIN project_members m ON m.project_id = p.id
+         WHERE p.user_id = ? OR m.user_id = ?
+         ORDER BY p.updated_at DESC`,
+      )
+      .all(user.id, user.id) as unknown as ProjectRow[];
     return { projects: rows.map((p) => ({ ...projectJson(p), analysis: analysisJson(latestAnalysis(p.id)) })) };
   });
 
-  app.post<{ Body: { owner?: string; repo?: string; branch?: string } }>('/api/projects', async (request) => {
+  app.post<{ Body: { owner?: string; repo?: string; branch?: string } }>('/api/projects', async (request, reply) => {
     const user = auth.requireUser(request);
-    const { owner, repo, branch } = request.body ?? {};
-    if (typeof owner !== 'string' || typeof repo !== 'string' || typeof branch !== 'string' || !owner || !repo || !branch) {
-      throw new AppError('bad_request', 'owner, repo and branch are required.', 400);
+    if (rateLimiter) {
+      rateLimiter.check(`import:${user.id}`, { max: 10, windowMs: 300_000 }, reply);
     }
+    const { owner, repo, branch } = validateRepoInput(request.body?.owner, request.body?.repo, request.body?.branch);
     // Confirms the user can read this repository with their own GitHub authorization.
     const meta = await new GitHubClient(config.github.apiUrl, auth.githubToken(user.id)).repo(owner, repo);
     const existing = db.prepare('SELECT * FROM projects WHERE user_id = ? AND full_name = ?').get(user.id, meta.fullName) as ProjectRow | undefined;
@@ -163,10 +214,45 @@ export function registerProjectRoutes(app: FastifyInstance, config: Config, db: 
       db.prepare(
         'INSERT INTO projects (id, user_id, owner, repo, full_name, is_private, default_branch, branch, html_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(projectId, user.id, meta.owner, meta.name, meta.fullName, meta.private ? 1 : 0, meta.defaultBranch, branch, meta.htmlUrl, ts, ts);
+      db.prepare(
+        'INSERT OR IGNORE INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)',
+      ).run(projectId, user.id, 'owner', ts);
     }
     const running = db.prepare("SELECT id FROM analyses WHERE project_id = ? AND status IN ('queued', 'running')").get(projectId) as { id: string } | undefined;
     const analysisId = running?.id ?? runner.start(projectId, { kind: 'github', userId: user.id, owner: meta.owner, repo: meta.name, branch });
     return { projectId, analysisId };
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (request) => {
+    const project = getProject(request, request.params.id, 'project:delete');
+    if (project.user_id === null) throw new AppError('forbidden', 'The sample project cannot be deleted.', 403);
+    db.prepare('DELETE FROM projects WHERE id = ?').run(project.id);
+    codeStore?.collectGarbage();
+    return { ok: true, deleted: project.id };
+  });
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/members', async (request) => {
+    const project = getProject(request, request.params.id, 'member:view');
+    return { members: rbac.listMembers(project.id) };
+  });
+
+  app.post<{ Params: { id: string }; Body: { userId?: string; role?: 'admin' | 'member' | 'viewer' } }>('/api/projects/:id/members', async (request) => {
+    const user = auth.requireUser(request);
+    const project = getProject(request, request.params.id, 'member:manage');
+    const callerRole = rbac.getRole(project.id, user.id)!;
+    const { userId: targetUserId, role: newRole } = request.body ?? {};
+    if (!targetUserId || typeof targetUserId !== 'string') throw new AppError('bad_request', 'userId is required.', 400);
+    if (!newRole || !['admin', 'member', 'viewer'].includes(newRole)) throw new AppError('bad_request', 'role must be admin, member, or viewer.', 400);
+    rbac.setMember(project.id, targetUserId, newRole, callerRole, now());
+    return { ok: true, members: rbac.listMembers(project.id) };
+  });
+
+  app.delete<{ Params: { id: string; userId: string } }>('/api/projects/:id/members/:userId', async (request) => {
+    const user = auth.requireUser(request);
+    const project = getProject(request, request.params.id, 'member:manage');
+    const callerRole = rbac.getRole(project.id, user.id)!;
+    rbac.removeMember(project.id, request.params.userId, callerRole);
+    return { ok: true, members: rbac.listMembers(project.id) };
   });
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (request) => {
@@ -363,9 +449,15 @@ export function registerProjectRoutes(app: FastifyInstance, config: Config, db: 
   app.get('/api/projects/:id/graph/nodes/:nodeId', async (request: FastifyRequest<{ Params: { id: string; nodeId: string }; Querystring: { analysisId?: string } }>) =>
     handlers.node(completedGraph(request, request.params.id), request.params.nodeId),
   );
-  app.get('/api/projects/:id/graph/export', async (request: GraphReq, reply: FastifyReply) => handlers.exportGraph(completedGraph(request, request.params.id), request.query, reply));
+  app.get('/api/projects/:id/graph/export', async (request: GraphReq, reply: FastifyReply) => {
+    if (rateLimiter) {
+      const user = auth.userFromRequest(request);
+      rateLimiter.check(`export:${getClientKey(request, user?.id)}`, { max: 20, windowMs: 60_000 }, reply);
+    }
+    return handlers.exportGraph(completedGraph(request, request.params.id), request.query, reply);
+  });
 
-  return { getProject, completedGraph, contextFor, graphMeta, handlers };
+  return { getProject, completedGraph, contextFor, graphMeta, rbac, handlers };
 }
 
 /** Render an SVG to PNG at up to 2x, capped so very large drawings stay within a sane bitmap size. */

@@ -13,7 +13,7 @@ export const TOTAL_REPOS = 150;
 
 /** Minimal stand-in for api.github.com with pagination, branches and token expiry. */
 export function startMockGitHub() {
-  const state = { expired: false, port: 0 };
+  const state = { expired: false, port: 0, sizes: {} as Record<string, number> };
   const repo = (i: number) => {
     const org = i % 3 === 0;
     const owner = i === 0 ? 'acme' : org ? 'acme' : 'octo';
@@ -30,7 +30,7 @@ export function startMockGitHub() {
       pushed_at: null,
       default_branch: 'main',
       html_url: `https://github.com/${owner}/${name}`,
-      size: 12,
+      size: 12 as number,
       archived: false,
       fork: false,
     };
@@ -55,6 +55,7 @@ export function startMockGitHub() {
     if (m) {
       const r = Array.from({ length: TOTAL_REPOS }, (_, i) => repo(i)).find((x) => x.full_name === `${m[1]}/${m[2]}`);
       if (!r) return json(404, { message: 'Not Found' });
+      if (state.sizes[r.full_name] !== undefined) r.size = state.sizes[r.full_name];
       if (m[3]) return json(200, [{ name: 'feature/x', protected: false, commit: { sha: 'b'.repeat(40) } }, { name: 'main', protected: true, commit: { sha: 'a'.repeat(40) } }]);
       return json(200, r);
     }
@@ -69,12 +70,13 @@ export function startMockGitHub() {
 }
 
 /** A bare git remote containing the hand-verified fixture, served over file://. */
-export function createRemote(root: string) {
+export function createRemote(root: string, extra?: (work: string) => void) {
   const work = path.join(root, 'work');
   const git = (...args: string[]) => execFileSync('git', args, { cwd: work, stdio: 'pipe', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
   cpSync(FIXTURE, work, { recursive: true });
+  extra?.(work);
   git('init', '-q', '-b', 'main');
-  git('-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A');
+  git('-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A', '-f');
   git('-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '-m', 'fixture');
   mkdirSync(path.join(root, 'remotes/acme'), { recursive: true });
   execFileSync('git', ['clone', '-q', '--bare', work, path.join(root, 'remotes/acme/fixture.git')]);

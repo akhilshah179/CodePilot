@@ -6,9 +6,7 @@ import { buildSystemMap } from './system.ts';
 import { buildTechnologyIntel } from './intelligence.ts';
 import { opLabel, opText } from './ops.ts';
 import type { AppInfo, AppKind, DetectorContext, EdgeDraft, NodeDraft } from './context.ts';
-import { buildAutomationOverview, buildFlows, buildHierarchicalFlows } from './flows.ts';
-import { buildMainFlows } from './mainFlows.ts';
-import { buildAutomationFlowcharts } from './flowchart.ts';
+import { buildFlows } from './flows.ts';
 import { bestRoutes, FileGraph } from './graph.ts';
 import { SymbolIndex, type Scope } from './symbols.ts';
 import { dirOf, isSecretKey, joinPath } from './text.ts';
@@ -1751,13 +1749,7 @@ export class Detector implements DetectorContext {
 export function detectArchitecture(input: DetectInput): Architecture {
   const d = new Detector(input.facts, input.graph);
   d.run();
-  const rawFlows = buildFlows(d);
-  const { flows, journeys, hierarchy } = buildHierarchicalFlows(rawFlows);
-  const automation = buildAutomationOverview(d, flows, journeys, hierarchy);
-  const mainFlows = buildMainFlows(d, flows, automation.capabilities);
-  automation.mainFlows = mainFlows;
-  const automationV4 = buildAutomationFlowcharts(d);
-  const flowsV4 = automationV4.flows;
+  const flows = buildFlows(d);
   const blast: Record<string, BlastRadius> = {};
   for (const n of d.nodes.values()) blast[n.id] = blastRadius(d, n.id);
   if (input.facts.warnings.length) d.limitations.push(`${input.facts.warnings.length} file${input.facts.warnings.length === 1 ? '' : 's'} could not be parsed and were skipped: ${input.facts.warnings.slice(0, 3).map((w) => `${w.file} (${w.message})`).join('; ')}${input.facts.warnings.length > 3 ? '…' : ''}.`);
@@ -1799,16 +1791,6 @@ export function detectArchitecture(input: DetectInput): Architecture {
     nodes,
     edges,
     flows,
-    journeys,
-    hierarchy,
-    automation,
-    heroFlow: automation.heroFlow,
-    capabilities: automation.capabilities,
-    globalMiddleware: automation.globalMiddleware,
-    traceCoverage: automation.traceCoverage,
-    mainFlows,
-    flowsV4,
-    automationV4,
     evidence,
     blast,
     summary: { patterns: [], strengths: [], risks: [], totals: { tools: 0, apps: 0, edges: 0, flows: 0, evidence: 0 }, limitations: [] },

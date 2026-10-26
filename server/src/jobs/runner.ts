@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
 import { analyzeRepositoryWithFacts, type AnalysisProgress, type PartialGraph } from '@codepilot/analyzer';
 import type { ArchitectureStore } from '../architectureStore.ts';
+import type { CodeStore } from '../codeStore.ts';
 import type { AuthStore } from '../auth/store.ts';
 import type { Config } from '../config.ts';
 import { randomId } from '../crypto.ts';
@@ -76,6 +77,7 @@ export class AnalysisRunner {
     private readonly graphs: GraphStore,
     private readonly log: FastifyBaseLogger,
     private readonly architectures?: ArchitectureStore,
+    private readonly code?: CodeStore,
   ) {}
 
   /** Analyses left running by a previous process can never finish; mark them failed with a clear next step. */
@@ -186,6 +188,7 @@ export class AnalysisRunner {
     const l = this.live.get(analysisId)!;
     const src = l.source;
     let workdir: string | undefined;
+    let storing: Promise<void> | undefined;
     this.db.prepare("UPDATE analyses SET status = 'running', started_at = ? WHERE id = ?").run(now(), analysisId);
     try {
       let root: string;
@@ -213,6 +216,10 @@ export class AnalysisRunner {
             l.counters.clone = p;
             this.progress(l);
           },
+        }).catch((err: unknown) => {
+          // An empty repository has no branch to clone; GitHub reports its size as 0.
+          if (err instanceof AppError && err.code === 'branch_not_found' && meta.sizeKb === 0) throw new AppError('repo_empty', 'Repository was empty: there is nothing on this branch to import yet.', 422);
+          throw err;
         });
         commitSha = await headCommit(root);
         repository = { owner: src.owner, name: src.repo, branch: src.branch, commitSha };
@@ -221,6 +228,9 @@ export class AnalysisRunner {
         ignore = src.ignore;
         repository = { name: src.name, branch: src.branch };
       }
+
+      // The Code tab's files are stored alongside the analysis, so they can be read before it finishes.
+      storing = this.code?.store({ analysisId, projectId: l.projectId, root, ignore, commitSha, signal: l.abort.signal });
 
       const { graph, facts } = await analyzeRepositoryWithFacts(root, {
         repository,
@@ -273,12 +283,19 @@ export class AnalysisRunner {
             : { code: 'analysis_failed', message: `Analysis failed unexpectedly. Try again; if it keeps failing, report analysis ${analysisId}.` };
       if (!(err instanceof AppError)) this.log.error({ err, analysisId }, 'analysis failed');
       l.error = error;
+      const failedAt = l.stage;
       l.stage = 'failed';
-      this.db
-        .prepare("UPDATE analyses SET status = 'failed', stage = 'failed', error_code = ?, error_message = ?, finished_at = ? WHERE id = ?")
-        .run(error.code, error.message, now(), analysisId);
+      try {
+        this.db
+          .prepare("UPDATE analyses SET status = 'failed', stage = 'failed', failed_stage = ?, error_code = ?, error_message = ?, finished_at = ? WHERE id = ?")
+          .run(failedAt, error.code, error.message, now(), analysisId);
+      } catch {
+        // Ignored if server is shutting down and DB is already closed
+      }
       this.emit(l, { type: 'error', error });
     } finally {
+      // The checkout is removed only once the Code tab's copy has been written.
+      await storing;
       if (workdir) await rm(workdir, { recursive: true, force: true }).catch(() => {});
       if (l.pendingProgress) clearTimeout(l.pendingProgress);
       // Keep the terminal state briefly for late subscribers, then release memory.

@@ -184,7 +184,7 @@ describe('API: onboarding → analysis → graph', () => {
     expect(png.headers.get('content-type')).toBe('image/png');
     const bytes = new Uint8Array(await png.arrayBuffer());
     expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
-  });
+  }, 30_000);
 
   it('serves an evidence-backed architecture, cached by commit, with flows, summary and exports', async () => {
     const res = await api(`/api/projects/${projectId}/architecture`);

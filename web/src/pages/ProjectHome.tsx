@@ -1,7 +1,7 @@
 import { Settings2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-type View = 'summary' | 'wireframe' | 'architecture' | 'intelligence' | 'automation';
+type View = 'summary' | 'wireframe' | 'architecture' | 'intelligence' | 'automation' | 'code';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AppHeader } from '../components/AppHeader.tsx';
 import { ErrorNotice } from '../components/ui.tsx';
@@ -10,6 +10,8 @@ import { ArchitectureView } from '../features/architecture/ArchitectureView.tsx'
 import { WireframeView } from '../features/project/WireframeView.tsx';
 import { TechIntelligenceView } from '../features/intelligence/TechIntelligenceView.tsx';
 import { AutomationView } from '../features/automation/AutomationView.tsx';
+import { CodeView, type CodeLocation } from '../features/code/CodeView.tsx';
+import { codeHref, registerFileOpener } from '../lib/fileLinks.ts';
 import { ConsentDialog } from '../features/collective/ConsentDialog.tsx';
 import { api, ApiError, projectSource } from '../lib/api.ts';
 import { relativeTime } from '../lib/format.ts';
@@ -20,7 +22,7 @@ export function ProjectHome() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const rawView = params.get('view');
-  const view: View = rawView === 'wireframe' || rawView === 'architecture' || rawView === 'intelligence' || rawView === 'automation' ? rawView : 'summary';
+  const view: View = rawView === 'wireframe' || rawView === 'architecture' || rawView === 'intelligence' || rawView === 'automation' || rawView === 'code' ? rawView : 'summary';
   const info = useAsync(() => api.project(id), [id]);
   const me = useAsync(() => api.me(), []);
   const [rerunError, setRerunError] = useState<ApiError | null>(null);
@@ -33,6 +35,37 @@ export function ProjectHome() {
   const setView = (v: View, extra: Record<string, string> = {}) => {
     const next = new URLSearchParams({ view: v, ...extra });
     setParams(next, { replace: false });
+  };
+
+  // File:line links in every view open the Code tab in this project (same tab, same snapshot).
+  registerFileOpener((p, commitSha) => ({ label: 'Open in Code', href: (path, ln) => codeHref(p.id, path, ln, commitSha) }));
+  useEffect(() => () => registerFileOpener(null), []);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.('a[href]');
+      const href = a?.getAttribute('href');
+      if (!href || !href.startsWith(`/projects/${encodeURIComponent(id)}?`) || !href.includes('view=code')) return;
+      e.preventDefault();
+      navigate(href);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [id, navigate]);
+
+  const codeLocation = (loc: CodeLocation, replace = false) => {
+    const next = new URLSearchParams({ view: 'code' });
+    for (const k of ['commit', 'analysisId']) {
+      const v = params.get(k);
+      if (v) next.set(k, v);
+    }
+    if (loc.analysisId) {
+      next.delete('commit');
+      next.set('analysisId', loc.analysisId);
+    }
+    if (loc.file) next.set('file', loc.file);
+    if (loc.file && loc.line) next.set('line', loc.line);
+    setParams(next, { replace });
   };
 
   if (info.error) {
@@ -51,7 +84,8 @@ export function ProjectHome() {
   if (!info.data || !project) return <div className="view-pad faint">Loading project…</div>;
 
   const { analysis, completed } = info.data;
-  if (!completed && analysis && (analysis.status === 'queued' || analysis.status === 'running')) {
+  // The Code tab works while the first analysis is still running; other views wait for it.
+  if (!completed && analysis && (analysis.status === 'queued' || analysis.status === 'running') && view !== 'code') {
     return <Navigate to={`/projects/${id}/analysis?analysisId=${analysis.id}`} replace />;
   }
 
@@ -106,6 +140,9 @@ export function ProjectHome() {
           <button role="tab" aria-selected={view === 'automation'} onClick={() => setView('automation')}>
             Automation
           </button>
+          <button role="tab" aria-selected={view === 'code'} onClick={() => setView('code')}>
+            Code
+          </button>
         </div>
         <div className="spacer" />
         {project.isSample && (
@@ -132,7 +169,17 @@ export function ProjectHome() {
             <ErrorNotice error={rerunError} />
           </div>
         )}
-        {!completed ? (
+        {view === 'code' ? (
+          <CodeView
+            key={id}
+            project={project}
+            file={params.get('file') ?? undefined}
+            line={params.get('line') ?? undefined}
+            commit={params.get('commit') ?? undefined}
+            analysisId={params.get('analysisId') ?? undefined}
+            onLocation={codeLocation}
+          />
+        ) : !completed ? (
           <div className="view-pad narrow">
             <ErrorNotice
               error={{

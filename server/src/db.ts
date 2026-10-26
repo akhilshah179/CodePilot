@@ -213,59 +213,119 @@ const MIGRATIONS = [
   );
   CREATE INDEX incident_tags_project ON incident_tags(project_id, created_at);
   `,
-  // 6: Automation Engine v3 flow customizations (renames, replacements per project).
+  // Automation Engine: main flows per analysis and engine schema version, with stored layout.
   `
-  CREATE TABLE main_flow_customizations (
+  CREATE TABLE automation_runs (
+    analysis_id TEXT PRIMARY KEY REFERENCES analyses(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    flow_id TEXT NOT NULL,
-    replacement_flow_id TEXT,
-    custom_name TEXT,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (project_id, flow_id)
+    commit_sha TEXT,
+    schema_version INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    project_type TEXT NOT NULL,
+    meta_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
   );
-  `,
-  // 7: Automation Engine v4 data model (flows, flow_nodes, flow_edges)
-  `
-  CREATE TABLE flows_v4 (
+  CREATE INDEX automation_runs_commit ON automation_runs(project_id, commit_sha, schema_version);
+  CREATE TABLE flows (
     id TEXT NOT NULL,
+    analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    commit_sha TEXT,
+    schema_version INTEGER NOT NULL,
+    flow_key TEXT NOT NULL,
     name TEXT NOT NULL,
     summary TEXT NOT NULL,
+    cycle TEXT NOT NULL,
+    confidence INTEGER NOT NULL,
     coverage INTEGER NOT NULL,
-    confidence TEXT NOT NULL,
-    pinned_by_user INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (project_id, id)
+    pinned INTEGER NOT NULL DEFAULT 0,
+    rank INTEGER NOT NULL,
+    data_json TEXT NOT NULL,
+    PRIMARY KEY (analysis_id, id)
   );
-  CREATE INDEX flows_v4_project ON flows_v4(project_id);
-
-  CREATE TABLE flow_nodes_v4 (
-    id TEXT NOT NULL,
+  CREATE TABLE flow_nodes (
+    analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
     flow_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
+    id TEXT NOT NULL,
     type TEXT NOT NULL,
     label TEXT NOT NULL,
+    lane TEXT NOT NULL,
     file TEXT NOT NULL,
     line INTEGER,
-    snippet_ref TEXT,
     tools_json TEXT NOT NULL,
-    lane TEXT NOT NULL,
-    PRIMARY KEY (project_id, flow_id, id),
-    FOREIGN KEY (project_id, flow_id) REFERENCES flows_v4(project_id, id) ON DELETE CASCADE
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    data_json TEXT NOT NULL,
+    PRIMARY KEY (analysis_id, flow_id, id)
   );
-
-  CREATE TABLE flow_edges_v4 (
-    id TEXT NOT NULL,
+  CREATE TABLE flow_edges (
+    analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
     flow_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
+    id TEXT NOT NULL,
     source TEXT NOT NULL,
     target TEXT NOT NULL,
     kind TEXT NOT NULL,
     label TEXT,
-    evidence_json TEXT,
-    PRIMARY KEY (project_id, flow_id, id),
-    FOREIGN KEY (project_id, flow_id) REFERENCES flows_v4(project_id, id) ON DELETE CASCADE
+    evidence_json TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    PRIMARY KEY (analysis_id, flow_id, id)
   );
+  CREATE TABLE automation_prefs (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    selected_json TEXT NOT NULL DEFAULT '[]',
+    names_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL
+  );
+  `,
+  // Code tab: the files of each snapshot as imported (secrets masked), deduplicated by content,
+  // with every entry that was not stored and why; and the stage an analysis failed at.
+  `
+  CREATE TABLE code_snapshots (
+    analysis_id TEXT PRIMARY KEY REFERENCES analyses(id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    commit_sha TEXT,
+    status TEXT NOT NULL,
+    stored INTEGER NOT NULL DEFAULT 0,
+    not_stored INTEGER NOT NULL DEFAULT 0,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+  );
+  CREATE INDEX code_snapshots_project ON code_snapshots(project_id, created_at);
+  CREATE TABLE code_blobs (
+    hash TEXT PRIMARY KEY,
+    content TEXT NOT NULL
+  );
+  CREATE TABLE code_files (
+    analysis_id TEXT NOT NULL REFERENCES code_snapshots(analysis_id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    stored INTEGER NOT NULL,
+    is_dir INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    size INTEGER,
+    language TEXT,
+    lines INTEGER,
+    blob_hash TEXT,
+    masked_lines TEXT,
+    PRIMARY KEY (analysis_id, path)
+  );
+  CREATE INDEX code_files_blob ON code_files(blob_hash);
+  ALTER TABLE analyses ADD COLUMN failed_stage TEXT;
+  `,
+  // 6: Workspace RBAC: project_members mapping with role checks (owner, admin, member, viewer).
+  `
+  CREATE TABLE project_members (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, user_id)
+  );
+  CREATE INDEX project_members_user ON project_members(user_id);
+  INSERT OR IGNORE INTO project_members (project_id, user_id, role, created_at)
+  SELECT id, user_id, 'owner', created_at FROM projects WHERE user_id IS NOT NULL;
   `,
 ];
 

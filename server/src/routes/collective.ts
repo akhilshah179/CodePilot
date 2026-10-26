@@ -11,24 +11,24 @@ export function registerCollectiveRoutes(app: FastifyInstance, config: Config, a
   // Consent: owners only, explicit boolean, logged.
   app.post<{ Params: { id: string }; Body: { enabled?: unknown } }>('/api/projects/:id/collective-intelligence/consent', async (request) => {
     const user = auth.requireUser(request);
-    const project = projects.getProject(request, request.params.id);
+    const project = projects.getProject(request, request.params.id, 'consent:manage');
     if (typeof request.body?.enabled !== 'boolean') throw new AppError('bad_request', 'Body must be { "enabled": true | false }.', 400);
     const res = service.setConsent(project, user.id, request.body.enabled);
     return { ...res, status: service.status(project.id, project.user_id === null) };
   });
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/collective-intelligence/status', async (request) => {
-    const project = projects.getProject(request, request.params.id);
+    const project = projects.getProject(request, request.params.id, 'project:view');
     return service.status(project.id, project.user_id === null);
   });
 
-  app.get<{ Params: { id: string } } & Q>('/api/projects/:id/benchmark', async (request) => service.benchmark(projects.completedGraph(request, request.params.id)));
+  app.get<{ Params: { id: string } } & Q>('/api/projects/:id/benchmark', async (request) => service.benchmark(projects.completedGraph(request, request.params.id, 'project:view')));
 
-  app.get<{ Params: { id: string } } & Q>('/api/projects/:id/pattern-insights', async (request) => service.insights(projects.completedGraph(request, request.params.id)));
+  app.get<{ Params: { id: string } } & Q>('/api/projects/:id/pattern-insights', async (request) => service.insights(projects.completedGraph(request, request.params.id, 'project:view')));
 
   app.post<{ Params: { id: string; nodeId: string }; Body: { month?: unknown; source?: unknown; description?: unknown } } & Q>('/api/projects/:id/graph/nodes/:nodeId/incident-tag', async (request, reply) => {
     const user = auth.requireUser(request);
-    const ctx = projects.completedGraph(request, request.params.id);
+    const ctx = projects.completedGraph(request, request.params.id, 'flows:edit');
     const b = request.body ?? {};
     const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
     reply.status(201);

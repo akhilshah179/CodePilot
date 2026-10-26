@@ -1,40 +1,19 @@
-import {
-  ArrowRightLeft,
-  Check,
-  CheckCircle2,
-  Cpu,
-  Edit2,
-  ExternalLink,
-  Info,
-  Layers,
-  ShieldCheck,
-  Sparkles,
-  Workflow,
-  Wrench,
-  X,
-} from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { ConfidenceBadge, ErrorNotice } from '../../components/ui.tsx';
-import {
-  data,
-  type AutomationCoverageV4,
-  type DataSource,
-  type FlowNode,
-  type FlowV4,
-  type GlobalMiddleware,
-  type Project,
-} from '../../lib/api.ts';
-import { useAsync } from '../../lib/hooks.ts';
-import { CoverageDisclosureModal } from './CoverageDisclosureModal.tsx';
-import { FlowExplanationPanelV4 } from './FlowExplanationPanelV4.tsx';
-import { FlowchartCanvas } from './FlowchartCanvas.tsx';
+import { AlertTriangle, ArrowLeftRight, Check, ChevronDown, Info, Pencil, RefreshCw, Workflow, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ErrorNotice } from '../../components/ui.tsx';
+import { api, data, type ApiError, type AutomationCoverage, type AutomationFlow, type AutomationResponse, type DataSource, type Project } from '../../lib/api.ts';
+import { fileOpener } from '../../lib/fileLinks.ts';
+import { useAsync, useMediaQuery, usePrefersReducedMotion } from '../../lib/hooks.ts';
+import { Explanation } from './Explanation.tsx';
+import { FlowChart, NODE_META } from './FlowChart.tsx';
 import { NodeInspector } from './NodeInspector.tsx';
-import { SwapFlowModal } from './SwapFlowModal.tsx';
 
 interface Props {
   src: DataSource;
   project: Project;
+  /** Owned projects can rename and swap flows; share links and the sample are read-only. */
   projectId?: string;
+  /** A traced lifecycle id (from Architecture or Technology Intelligence): open the main flow built from it. */
   focusFlow?: string;
   initialQuery?: string;
   onWireframe?(path: string): void;
@@ -42,386 +21,322 @@ interface Props {
   onIntelligence?(tech: string): void;
 }
 
-export function AutomationView({
-  src,
-  project,
-  focusFlow,
-  onArchitecture,
-}: Props) {
-  // Fetch v4 automation flows
-  const req = useAsync(() => data.automationFlowsV4(src), [src.base]);
-  const [flows, setFlows] = useState<FlowV4[]>([]);
-  const [coverage, setCoverage] = useState<AutomationCoverageV4 | null>(null);
-  const [globalMiddleware, setGlobalMiddleware] = useState<GlobalMiddleware | null>(null);
+const CYCLE_TEXT: Record<string, string> = { access: 'Access', core: 'Core action', data: 'Data', background: 'Background', startup: 'Startup' };
 
-  const [selectedFlowId, setSelectedFlowId] = useState<string>('');
-  const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
+/**
+ * Automation: at most four main flows of the project as flowcharts. Regions, top to bottom, never
+ * overlapping: summary · flow selector · canvas (toolbar, chart, overlays inside it) · explanation.
+ */
+export function AutomationView({ src, project, projectId, focusFlow, initialQuery, onWireframe, onArchitecture, onIntelligence }: Props) {
+  const res = useAsync(() => data.automation(src), [src.base]);
+  const [override, setOverride] = useState<AutomationResponse | null>(null);
+  const view = override ?? res.data;
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [mobileChart, setMobileChart] = useState(false);
+  const [mutError, setMutError] = useState<ApiError | null>(null);
+  const [focusNonce, setFocusNonce] = useState(0);
+  const reduced = usePrefersReducedMotion();
+  const phone = useMediaQuery('(max-width: 600px)');
+  const canEdit = !!projectId && !src.readOnly && !project.isSample;
 
-  // Rename state
-  const [editingFlowId, setEditingFlowId] = useState<string | null>(null);
-  const [editNameText, setEditNameText] = useState<string>('');
-  const [renameError, setRenameError] = useState<string | null>(null);
-
-  // Swap modal state
-  const [swapModalFlow, setSwapModalFlow] = useState<FlowV4 | null>(null);
-
-  // Coverage modal state
-  const [showCoverageModal, setShowCoverageModal] = useState(false);
-
-  // Global middleware strip inline toggle
-  const [showMiddlewareInline, setShowMiddlewareInline] = useState(false);
-
-  // Sync data from async response
+  useEffect(() => setOverride(null), [res.data]);
+  // Pick the flow to open: one built from a linked lifecycle, one matching a query, else the first.
   useEffect(() => {
-    if (req.data) {
-      setFlows(req.data.flows || []);
-      setCoverage(req.data.coverage || null);
-      setGlobalMiddleware(req.data.globalMiddleware || null);
+    if (!view?.flows.length) return;
+    if (activeKey && view.flows.some((f) => f.key === activeKey)) return;
+    const q = initialQuery?.toLowerCase();
+    const linked = (focusFlow && view.flows.find((f) => f.sourceFlowIds.includes(focusFlow))) || (q && view.flows.find((f) => `${f.name} ${f.tools.map((t) => t.name).join(' ')} ${f.purpose}`.toLowerCase().includes(q)));
+    setActiveKey((linked || view.flows[0]).key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+  useEffect(() => setSelected(null), [activeKey]);
 
-      if (!selectedFlowId || !req.data.flows.some((f) => f.id === selectedFlowId)) {
-        const preferred = focusFlow && req.data.flows.find((f) => f.id === focusFlow);
-        setSelectedFlowId(preferred ? preferred.id : req.data.flows[0]?.id ?? '');
-      }
-    }
-  }, [req.data, focusFlow]);
-
-  // Reset selected node when switching flow
-  useEffect(() => {
-    setSelectedNode(null);
-  }, [selectedFlowId]);
-
-  if (req.loading && flows.length === 0) {
-    return (
-      <div className="aev3-loading">
-        <Workflow className="aev3-spin-icon" size={28} />
-        <p>Synthesizing main automation flowcharts from code AST...</p>
-      </div>
-    );
-  }
-
-  if (req.error && flows.length === 0) {
+  if (res.error) {
+    const unavailable = res.error.body.code === 'architecture_unavailable';
     return (
       <div className="view-pad narrow">
-        <ErrorNotice error={req.error} onRetry={req.reload} />
+        <ErrorNotice error={unavailable ? { message: res.error.body.message } : res.error} onRetry={unavailable ? undefined : res.reload} />
+        {!unavailable && <p className="small faint au-details">{res.error.body.code}: {res.error.body.message}</p>}
       </div>
     );
   }
+  if (!view) return <div className="view-pad faint">Building the main flows…</div>;
 
-  if (flows.length === 0) {
-    return (
-      <div className="aev3-empty-state">
-        <Workflow size={32} />
-        <h3>No automation flows detected</h3>
-        <p>No traced entry points or client handlers were detected for this project.</p>
-      </div>
-    );
-  }
-
-  const currentFlow = flows.find((f) => f.id === selectedFlowId) || flows[0];
-
-  const handleStartRename = (flow: FlowV4, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingFlowId(flow.id);
-    setEditNameText(flow.name);
-    setRenameError(null);
-  };
-
-  const handleSaveRename = async (flowId: string) => {
-    if (!editNameText.trim()) return;
+  const active = view.flows.find((f) => f.key === activeKey) ?? view.flows[0];
+  const opener = fileOpener(project, view.snapshot.commitSha);
+  const snapshotKey = `${view.snapshot.analysisId}:${view.snapshot.commitSha ?? ''}`;
+  const mutate = async (fn: () => Promise<AutomationResponse>) => {
+    setMutError(null);
     try {
-      const res = await data.renameAutomationFlowV4(src, flowId, editNameText.trim());
-      if (res.flows) {
-        setFlows(res.flows);
-      }
-      setEditingFlowId(null);
-    } catch (err: unknown) {
-      setRenameError(err instanceof Error ? err.message : 'Failed to rename flow');
+      setOverride(await fn());
+    } catch (e) {
+      setMutError(e as ApiError);
     }
   };
 
-  const handleCancelRename = () => {
-    setEditingFlowId(null);
-    setEditNameText('');
-    setRenameError(null);
-  };
-
-  const handleSwapFlow = async (replacementFlowId: string) => {
-    if (!swapModalFlow) return;
-    try {
-      const res = await data.replaceAutomationFlowV4(src, swapModalFlow.id, replacementFlowId);
-      if (res.flows) {
-        setFlows(res.flows);
-        setSelectedFlowId(replacementFlowId);
-      }
-      setSwapModalFlow(null);
-    } catch (err: unknown) {
-      console.error('Failed to swap flow:', err);
-    }
-  };
-
-  const handleJumpToFlow = (flowName: string) => {
-    const target = flows.find((f) => f.name.toLowerCase().includes(flowName.toLowerCase()));
-    if (target) {
-      setSelectedFlowId(target.id);
-    }
-  };
+  const node = active && selected ? active.nodes.find((n) => n.id === selected) : undefined;
+  const inspector = node && active && (
+    <NodeInspector
+      flow={active}
+      node={node}
+      opener={opener}
+      onClose={() => setSelected(null)}
+      onSelect={setSelected}
+      onFocusBranch={() => setFocusNonce((n) => n + 1)}
+      onWireframe={onWireframe}
+      onArchitecture={onArchitecture}
+      onIntelligence={onIntelligence}
+      onJump={(k) => setActiveKey(k)}
+    />
+  );
 
   return (
-    <div className="aev3-wrapper aev4-wrapper">
-      {/* 1. Header & Navigation Tabs (At most 4 main flows, never padded) */}
-      <header className="aev3-header">
-        <div className="aev3-header-top">
-          <div className="aev3-title-block">
-            <h2 className="aev3-page-title">Automation Engine v4</h2>
-            <span className="aev3-page-subtitle">
-              True Flowcharts of Main Flows · Triggers, Decision Diamonds & Connected Paths
-            </span>
-          </div>
-
-          <div className="aev3-header-meta">
-            <span className="aev3-badge-counter">
-              Showing {flows.length} main {flows.length === 1 ? 'flow' : 'flows'}
-            </span>
-          </div>
-        </div>
-
-        {/* Global Middleware Strip */}
-        {globalMiddleware && globalMiddleware.steps.length > 0 && (
-          <div className="aev4-middleware-strip">
-            <div className="aev4-middleware-label">
-              <ShieldCheck size={13} className="aev4-shield-icon" />
-              <span>EVERY REQUEST PASSES THROUGH:</span>
-            </div>
-            <div className="aev4-middleware-steps">
-              {globalMiddleware.steps.map((step, idx) => (
-                <React.Fragment key={idx}>
-                  <div className="aev4-middleware-pill" title={`${step.file}:${step.line}`}>
-                    <span>{step.name}</span>
-                    <code>{step.file.split('/').pop()}</code>
-                  </div>
-                  {idx < globalMiddleware.steps.length - 1 && (
-                    <span className="aev4-middleware-arrow">→</span>
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
-            <button
-              type="button"
-              className={`aev4-middleware-toggle ${showMiddlewareInline ? 'active' : ''}`}
-              onClick={() => setShowMiddlewareInline(!showMiddlewareInline)}
-            >
-              {showMiddlewareInline ? 'Hide inline' : 'Show inline'}
-            </button>
-          </div>
-        )}
-
-        {/* The Up-To-Four Flow Cards Across Top */}
-        <div className="aev3-tabs-grid" role="tablist">
-          {flows.map((f, index) => {
-            const isSelected = f.id === currentFlow.id;
-            const isEditing = editingFlowId === f.id;
-
-            return (
-              <div
-                key={f.id}
-                role="tab"
-                aria-selected={isSelected}
-                tabIndex={0}
-                className={`aev3-flow-card ${isSelected ? 'is-selected' : ''}`}
-                onClick={() => setSelectedFlowId(f.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setSelectedFlowId(f.id);
-                  }
-                }}
-              >
-                <div className="aev3-card-top">
-                  <div className="aev3-card-index">0{index + 1}</div>
-
-                  <div className="aev3-card-actions">
-                    <button
-                      type="button"
-                      className="aev3-card-action-btn"
-                      onClick={(e) => handleStartRename(f, e)}
-                      title="Rename flow"
-                      aria-label="Rename flow"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    {f.allCandidates && f.allCandidates.length > 1 && (
-                      <button
-                        type="button"
-                        className="aev3-card-action-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSwapModalFlow(f);
-                        }}
-                        title="Swap with another candidate flow"
-                        aria-label="Swap flow"
-                      >
-                        <ArrowRightLeft size={12} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Flow Name / Inline Edit */}
-                {isEditing ? (
-                  <div className="aev3-inline-rename" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="text"
-                      className="aev3-rename-input"
-                      value={editNameText}
-                      autoFocus
-                      onChange={(e) => setEditNameText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveRename(f.id);
-                        if (e.key === 'Escape') handleCancelRename();
-                      }}
-                    />
-                    <div className="aev3-rename-btns">
-                      <button
-                        type="button"
-                        className="aev3-rename-confirm"
-                        onClick={() => handleSaveRename(f.id)}
-                        title="Save name"
-                      >
-                        <Check size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        className="aev3-rename-cancel"
-                        onClick={handleCancelRename}
-                        title="Cancel"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <h3 className="aev3-flow-name" title={f.name}>
-                    {f.name}
-                  </h3>
-                )}
-
-                {renameError && isEditing && (
-                  <div className="aev3-rename-error">{renameError}</div>
-                )}
-
-                {/* Purpose Line */}
-                <p className="aev3-flow-purpose-line" title={f.purpose || f.summary.whatItDoes}>
-                  {f.purpose || f.summary.whatItDoes}
-                </p>
-
-                {/* Card Bottom: Node count & Union of Tools */}
-                <div className="aev3-card-bottom">
-                  <span className="aev3-step-count-pill">
-                    {f.nodes.length} nodes
-                  </span>
-
-                  {f.tools.length > 0 && (
-                    <div className="aev3-tools-chips-row">
-                      {f.tools.slice(0, 3).map((tool) => (
-                        <span key={tool} className="aev3-tool-chip">
-                          {tool}
-                        </span>
-                      ))}
-                      {f.tools.length > 3 && (
-                        <span className="aev3-tool-chip more">
-                          +{f.tools.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* 2. Strict Arithmetic Coverage Line */}
-        {coverage && (
-          <div
-            className="aev3-coverage-line"
-            onClick={() => setShowCoverageModal(true)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') setShowCoverageModal(true);
-            }}
-          >
-            <div className="aev3-coverage-text">
-              <CheckCircle2 size={14} className="aev3-coverage-icon" />
-              <span>
-                <strong>{coverage.totalEntryPoints} entry points total:</strong>{' '}
-                {coverage.shownCount} shown in flows, {coverage.foldedCount} folded (listed),{' '}
-                {coverage.omittedCount} omitted (listed).
-              </span>
-            </div>
-            <button type="button" className="aev3-coverage-expand-btn">
-              <span>View full breakdown</span>
-              <ExternalLink size={12} />
-            </button>
-          </div>
-        )}
-      </header>
-
-      {/* 3. Main Workspace: Flowchart Canvas (Left ~65%) and Explanation/Inspector (Right ~35%) */}
-      <main className="aev3-workspace">
-        <section className="aev3-diagram-column aev4-canvas-col" aria-label="Interactive Flowchart Canvas">
-          <FlowchartCanvas
-            flow={currentFlow}
-            selectedNodeId={selectedNode?.id}
-            onSelectNode={(node) => setSelectedNode(node)}
-            onJumpToFlow={handleJumpToFlow}
-          />
-        </section>
-
-        <section className="aev3-explanation-column" aria-label="Flow Inspector & Explanation">
-          {selectedNode ? (
-            <NodeInspector
-              node={selectedNode}
-              flow={currentFlow}
-              onClose={() => setSelectedNode(null)}
-              onNavigateToCode={(file, line) => {
-                if (onArchitecture) {
-                  onArchitecture({ focus: `${file}:${line || 1}` });
-                }
-              }}
-            />
-          ) : (
-            <FlowExplanationPanelV4
-              project={project}
-              flow={currentFlow}
-              selectedNode={selectedNode}
-              onSelectNode={(node) => setSelectedNode(node)}
-              onOpenCode={(file, line) => {
-                if (onArchitecture) {
-                  onArchitecture({ focus: `${file}:${line || 1}` });
-                }
-              }}
-            />
-          )}
-        </section>
-      </main>
-
-      {/* Coverage Disclosure Modal */}
-      {showCoverageModal && coverage && (
-        <CoverageDisclosureModal
-          coverage={coverage}
-          onClose={() => setShowCoverageModal(false)}
-        />
+    <div className="au">
+      <Summary view={view} src={src} />
+      {view.regenerated && (
+        <p className="au-notice small" role="status">
+          <RefreshCw size={13} /> These flows were rebuilt for the current engine version.
+        </p>
       )}
+      {view.latestAnalysis && (
+        <div className="au-notice is-warn small" role="alert">
+          <AlertTriangle size={14} /> The latest analysis failed{view.latestAnalysis.error.message ? `: ${view.latestAnalysis.error.message}` : ''}. Showing the previous snapshot ({view.snapshot.branch}
+          {view.snapshot.commitSha ? ` @ ${view.snapshot.commitSha.slice(0, 7)}` : ''}).
+        </div>
+      )}
+      <Diagnostics view={view} />
+      {mutError && <ErrorNotice error={mutError} />}
 
-      {/* Swap Flow Modal */}
-      {swapModalFlow && swapModalFlow.allCandidates && (
-        <SwapFlowModal
-          currentFlow={swapModalFlow}
-          candidates={swapModalFlow.allCandidates}
-          onSwap={handleSwapFlow}
-          onClose={() => setSwapModalFlow(null)}
-        />
+      {!view.flows.length ? (
+        <div className="au-empty">
+          <Workflow size={22} aria-hidden="true" />
+          <h3>Nothing to show yet</h3>
+          <p>{view.diagnostics.notes[0] ?? 'No source files were found in this snapshot, so no flow can be built.'}</p>
+        </div>
+      ) : (
+        <>
+          <FlowCards
+            view={view}
+            activeKey={active.key}
+            canEdit={canEdit}
+            onPick={setActiveKey}
+            onRename={(f, name) => mutate(() => api.renameFlow(projectId!, f.id, name))}
+            onSwap={(f, key) => mutate(async () => {
+              const r = await api.replaceFlow(projectId!, f.id, key);
+              setActiveKey(key);
+              return r;
+            })}
+          />
+          {phone && !mobileChart ? (
+            <section className="au-steplist" aria-label={`Steps of ${active.name}`}>
+              <div className="au-steplist-head">
+                <h3>{active.name}</h3>
+                <button type="button" className="btn btn-sm" onClick={() => setMobileChart(true)}>
+                  Open flowchart
+                </button>
+              </div>
+              <ol>
+                {[...active.nodes]
+                  .filter((n) => n.type !== 'group')
+                  .sort((a, b) => a.order - b.order)
+                  .map((n) => {
+                    const meta = NODE_META[n.type];
+                    const Icon = meta.icon;
+                    return (
+                      <li key={n.id} className={`t-${n.type}`}>
+                        <span className="au-step-kind">
+                          <Icon size={13} aria-hidden="true" /> {meta.label}
+                        </span>
+                        <span className="au-step-label">{n.label}</span>
+                        <span className="mono small faint">
+                          {n.file}
+                          {n.line ? `:${n.line}` : ''}
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ol>
+            </section>
+          ) : (
+            <>
+              {phone && (
+                <button type="button" className="btn btn-sm au-back-list" onClick={() => setMobileChart(false)}>
+                  Back to step list
+                </button>
+              )}
+              <FlowChart key={`${active.id}:${snapshotKey}`} flow={active} snapshotKey={snapshotKey} selected={selected} onSelect={setSelected} reduced={reduced} inspector={inspector} focusRequest={focusNonce} />
+            </>
+          )}
+          <Explanation flow={active} selected={selected} onSelect={(id) => (setSelected(id), phone && setMobileChart(true))} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function Summary({ view, src }: { view: AutomationResponse; src: DataSource }) {
+  const [open, setOpen] = useState(false);
+  const cov = useAsync<AutomationCoverage | null>(() => (open ? data.automationCoverage(src) : Promise.resolve(null)), [open, src.base, view]);
+  const c = view.coverage;
+  const n = view.flows.length;
+  return (
+    <header className="au-summary">
+      <p>
+        <strong>{view.project.name}</strong>
+        <span className="au-dot">·</span>
+        {n} main flow{n === 1 ? '' : 's'}
+        <span className="au-dot">·</span>
+        covers {c.shown + c.folded} of {c.total} entry point{c.total === 1 ? '' : 's'}
+        <span className="au-dot">·</span>
+        <span className="faint">{view.projectTypeLabel}</span>
+        <button type="button" className="link-btn small au-cov-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {c.shown} shown, {c.folded} folded, {c.omitted} omitted <ChevronDown size={12} className={open ? 'is-open' : ''} />
+        </button>
+      </p>
+      {open && (
+        <div className="au-coverage">
+          {!cov.data ? (
+            <p className="small faint">Loading…</p>
+          ) : (
+            (['shown', 'folded', 'omitted'] as const).map((k) => (
+              <section key={k}>
+                <h4>
+                  {k === 'shown' ? 'Shown as main flows' : k === 'folded' ? 'Folded into a main flow' : 'Not shown'} <span className="mono faint">{cov.data![k].length}</span>
+                </h4>
+                <ul>
+                  {cov.data![k].map((e) => (
+                    <li key={e.key}>
+                      <span>{e.label}</span>
+                      <span className="mono small faint">
+                        {e.file}
+                        {e.line ? `:${e.line}` : ''}
+                        {e.reason ? ` · ${e.reason}` : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
+        </div>
+      )}
+    </header>
+  );
+}
+
+function Diagnostics({ view }: { view: AutomationResponse }) {
+  const d = view.diagnostics;
+  const sparse = view.status !== 'ok' || d.traceCoverage < 50 || d.rejected.length > 0;
+  if (!sparse) return null;
+  return (
+    <div className={`au-diag small${view.status === 'partial' ? ' is-warn' : ''}`} role="note">
+      <Info size={13} aria-hidden="true" />
+      <span>
+        {d.fallback ? `${d.fallback.reason} ` : ''}
+        {view.status === 'partial' ? 'No flow passed validation; the best partial flows are shown. ' : ''}
+        Entry points found: {d.entryPoints} · flows built: {d.flowsBuilt} · rejected: {d.rejected.length} · trace coverage: {d.traceCoverage}%.
+        {d.rejected.length > 0 && <> Rejected: {d.rejected.slice(0, 3).map((r) => `${r.name} (${r.reasons[0]})`).join('; ')}.</>}
+        {d.notes.map((n) => ` ${n}`)}
+      </span>
+    </div>
+  );
+}
+
+function FlowCards({ view, activeKey, canEdit, onPick, onRename, onSwap }: { view: AutomationResponse; activeKey: string; canEdit: boolean; onPick(key: string): void; onRename(f: AutomationFlow, name: string | null): void; onSwap(f: AutomationFlow, key: string): void }) {
+  return (
+    <div className="au-cards" role="tablist" aria-label="Main flows">
+      {view.flows.map((f) => (
+        <FlowCard key={f.key} f={f} active={f.key === activeKey} canEdit={canEdit} candidates={view.candidates.filter((c) => !c.selected)} onPick={() => onPick(f.key)} onRename={(name) => onRename(f, name)} onSwap={(k) => onSwap(f, k)} />
+      ))}
+    </div>
+  );
+}
+
+function FlowCard({ f, active, canEdit, candidates, onPick, onRename, onSwap }: { f: AutomationFlow; active: boolean; canEdit: boolean; candidates: AutomationResponse['candidates']; onPick(): void; onRename(name: string | null): void; onSwap(key: string): void }) {
+  const [editing, setEditing] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [name, setName] = useState(f.name);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => setName(f.name), [f.name]);
+  useEffect(() => {
+    if (editing) input.current?.select();
+  }, [editing]);
+  const steps = f.nodes.filter((n) => n.type !== 'group').length;
+  const tools = useMemo(() => f.tools.slice(0, 4), [f.tools]);
+  return (
+    <div className={`au-card${active ? ' is-active' : ''}`}>
+      <button type="button" role="tab" aria-selected={active} className="au-card-main" onClick={onPick}>
+        <span className="au-card-top">
+          <span className={`au-cycle c-${f.cycle}`}>{CYCLE_TEXT[f.cycle] ?? f.cycle}</span>
+          <span className={`au-conf ${f.confidence.percent >= 90 ? 'is-full' : f.confidence.percent >= 60 ? 'is-mostly' : 'is-partial'}`} title={`${f.confidence.percent}% of steps fully traced`}>
+            {f.partial ? 'Partially traced' : f.confidence.label} · {f.confidence.percent}%
+          </span>
+        </span>
+        {editing ? null : <span className="au-card-name">{f.name}</span>}
+        <span className="au-card-purpose">{f.purpose}</span>
+        <span className="au-card-meta">
+          <span className="mono">{steps} steps</span>
+          {tools.map((t) => (
+            <span key={t.id} className="au-tool">
+              {t.name}
+            </span>
+          ))}
+        </span>
+      </button>
+      {editing && (
+        <form
+          className="au-rename"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setEditing(false);
+            onRename(name.trim() && name.trim() !== f.generatedName ? name.trim() : null);
+          }}
+        >
+          <input ref={input} className="input input-sm" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} aria-label="Flow name" onKeyDown={(e) => e.key === 'Escape' && setEditing(false)} />
+          <button type="submit" className="icon-btn" aria-label="Save name">
+            <Check size={14} />
+          </button>
+          <button type="button" className="icon-btn" aria-label="Cancel" onClick={() => setEditing(false)}>
+            <X size={14} />
+          </button>
+        </form>
+      )}
+      {canEdit && !editing && (
+        <div className="au-card-tools">
+          <button type="button" className="icon-btn" aria-label={`Rename ${f.name}`} title="Rename" onClick={() => setEditing(true)}>
+            <Pencil size={13} />
+          </button>
+          <button type="button" className="icon-btn" aria-label={`Swap ${f.name} for another flow`} title="Swap" aria-expanded={swapping} onClick={() => setSwapping(!swapping)} disabled={!candidates.length}>
+            <ArrowLeftRight size={13} />
+          </button>
+          {f.renamed && (
+            <button type="button" className="link-btn small" onClick={() => onRename(null)}>
+              Reset name
+            </button>
+          )}
+        </div>
+      )}
+      {swapping && (
+        <div className="au-swap" role="menu" aria-label="Replace with">
+          <p className="small faint">Replace with a ranked flow:</p>
+          {candidates.map((c) => (
+            <button
+              key={c.key}
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setSwapping(false);
+                onSwap(c.key);
+              }}
+            >
+              <span>{c.name}</span>
+              <span className="small faint">
+                {CYCLE_TEXT[c.cycle] ?? c.cycle} · {c.steps} steps · {c.confidence.percent}%
+              </span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

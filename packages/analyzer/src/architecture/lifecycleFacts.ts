@@ -356,15 +356,17 @@ function afterEffects(code: string[], raw: string[], from: number, to: number): 
 export function scanUiTriggers(files: Map<string, LifecycleFile>, calls: HttpCallFact[], out: UiTriggerFact[], defs: Defs) {
   // Client functions by file: owner object (or function) name → client call.
   const byFile = new Map<string, { owner?: string; fn: string; call: HttpCallFact }[]>();
+  // A call's target must be written in the code: a path on this app, an absolute URL, or an env-configured URL.
+  const targeted = (h: HttpCallFact) => !!(h.url?.startsWith('/') || h.host || h.envVar);
   for (const h of calls) {
-    if (!h.fn || !h.url?.startsWith('/')) continue;
+    if (!h.fn || !targeted(h)) continue;
     if (!byFile.has(h.file)) byFile.set(h.file, []);
     byFile.get(h.file)!.push({ owner: h.owner, fn: h.fn, call: h });
   }
   // Calls written directly in a component (`new EventSource(…)` inside a useEffect) are their own call site.
   const direct = new Map<string, HttpCallFact[]>();
   for (const h of calls) {
-    if (h.fn || !h.url?.startsWith('/')) continue;
+    if (h.fn || !targeted(h)) continue;
     if (!direct.has(h.file)) direct.set(h.file, []);
     direct.get(h.file)!.push(h);
   }

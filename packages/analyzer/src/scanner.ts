@@ -45,7 +45,7 @@ export const EXCLUDED_DIRECTORIES = [
   '.idea',
 ];
 
-const LOCKFILES = new Set([
+export const LOCKFILES = new Set([
   'package-lock.json',
   'npm-shrinkwrap.json',
   'yarn.lock',
@@ -60,8 +60,8 @@ const LOCKFILES = new Set([
   'go.sum',
 ]);
 
-const GENERATED_NAME = /(\.min\.(js|css)|\.map|\.bundle\.js|\.chunk\.js|\.generated\.[a-z]+|_pb2\.py|\.pb\.go)$/i;
-const GENERATED_HEADER = /@generated\b|Code generated .* DO NOT EDIT/;
+export const GENERATED_NAME = /(\.min\.(js|css)|\.map|\.bundle\.js|\.chunk\.js|\.generated\.[a-z]+|_pb2\.py|\.pb\.go)$/i;
+export const GENERATED_HEADER = /@generated\b|Code generated .* DO NOT EDIT/;
 
 /** Human-readable scan policy, surfaced verbatim in onboarding so users see exactly what is skipped. */
 export const SCAN_POLICY = {

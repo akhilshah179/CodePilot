@@ -12,11 +12,14 @@
     "./shapes": "./src/shapes.ts",
     "./architecture": "./src/architecture/index.ts",
     "./architecture/types": "./src/architecture/types.ts",
-    "./architecture/flows": "./src/architecture/flows.ts",
     "./architecture/layout": "./src/architecture/layout.ts",
     "./architecture/render": "./src/architecture/render.ts",
     "./architecture/icons": "./src/architecture/icons.ts",
-    "./architecture/relations": "./src/architecture/relations.ts"
+    "./architecture/relations": "./src/architecture/relations.ts",
+    "./automation": "./src/automation/index.ts",
+    "./automation/layout": "./src/automation/layout.ts",
+    "./automation/types": "./src/automation/types.ts",
+    "./outline": "./src/outline.ts"
   },
   "dependencies": {
     "d3-force": "^3.0.0",

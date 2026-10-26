@@ -1,213 +1,165 @@
-import {
-  AlertTriangle,
-  ArrowDown,
-  ArrowRight,
-  ArrowUp,
-  CheckCircle2,
-  Code,
-  CornerDownRight,
-  Database,
-  ExternalLink,
-  FileCode,
-  GitBranch,
-  HelpCircle,
-  Layers,
-  MousePointer,
-  Play,
-  Server,
-  Wrench,
-  X,
-} from 'lucide-react';
-import React from 'react';
-import type { FlowEdge, FlowNode, FlowV4 } from '../../lib/api.ts';
+import { Crosshair, Cpu, ExternalLink, Layers, Network, Share2, X } from 'lucide-react';
+import { ConfidenceBadge } from '../../components/ui.tsx';
+import type { AutoEdge, AutoNode, AutomationFlow } from '../../lib/api.ts';
+import type { FileOpener } from '../../lib/fileLinks.ts';
+import { NODE_META } from './FlowChart.tsx';
 
-interface NodeInspectorProps {
-  node: FlowNode;
-  flow: FlowV4;
-  onClose: () => void;
-  onNavigateToCode?: (file: string, line?: number) => void;
+interface Props {
+  flow: AutomationFlow;
+  node: AutoNode;
+  opener: FileOpener;
+  onClose(): void;
+  onFocusBranch(): void;
+  onSelect(id: string): void;
+  onWireframe?(path: string): void;
+  onArchitecture?(target: { focus?: string; tech?: string }): void;
+  onIntelligence?(tech: string): void;
+  onJump?(key: string): void;
 }
 
-export function NodeInspector({
-  node,
-  flow,
-  onClose,
-  onNavigateToCode,
-}: NodeInspectorProps) {
-  const inEdges = flow.edges.filter((e) => e.target === node.id);
-  const outEdges = flow.edges.filter((e) => e.source === node.id);
+const where = (e: { file: string; line?: number }) => `${e.file}${e.line ? `:${e.line}` : ''}`;
 
-  const getBadgeColor = () => {
-    switch (node.type) {
-      case 'trigger':
-        return '#10b981';
-      case 'ui_step':
-        return '#0ea5e9';
-      case 'request':
-        return '#06b6d4';
-      case 'server_step':
-        return '#6366f1';
-      case 'decision':
-        return '#f59e0b';
-      case 'data_store':
-        return '#14b8a6';
-      case 'external_service':
-        return '#a855f7';
-      case 'background_job':
-        return '#f97316';
-      case 'end':
-        return '#10b981';
-      case 'jump':
-        return '#3b82f6';
-      case 'unknown':
-      default:
-        return '#ef4444';
-    }
-  };
+/** Everything about one step: where it is, the code, what goes in and out, tools, and links into the code. */
+export function NodeInspector({ flow, node: n, opener, onClose, onFocusBranch, onSelect, onWireframe, onArchitecture, onIntelligence, onJump }: Props) {
+  const meta = NODE_META[n.type];
+  const Icon = meta.icon;
+  const incoming = flow.edges.filter((e) => e.target === n.id);
+  const outgoing = flow.edges.filter((e) => e.source === n.id);
+  const label = (id: string) => flow.nodes.find((x) => x.id === id)?.label ?? id;
+  const href = opener.href(n.file, n.line);
+  const toolName = (id: string) => flow.tools.find((t) => t.id === id)?.name ?? id.replace(/^(tool|host|app):/, '');
+  const edgeText = (e: AutoEdge, other: string) => `${e.label ? `${e.label} · ` : ''}${label(other)}`;
 
   return (
-    <div className="node-inspector-drawer">
-      <div className="node-inspector-header">
-        <div className="node-inspector-title-group">
-          <span
-            className="node-inspector-type-badge"
-            style={{ backgroundColor: `${getBadgeColor()}20`, color: getBadgeColor(), borderColor: getBadgeColor() }}
-          >
-            {node.type.replace('_', ' ').toUpperCase()}
-          </span>
-          <span className="node-inspector-lane-badge">
-            {node.lane.toUpperCase()} LANE
-          </span>
-        </div>
-        <button
-          type="button"
-          className="node-inspector-close-btn"
-          onClick={onClose}
-          aria-label="Close Inspector"
-        >
-          <X size={16} />
+    <aside className="fc2-overlay fc2-inspector" aria-label={`${meta.label}: ${n.label}`}>
+      <header>
+        <span className="fc2-kind">
+          <Icon size={14} aria-hidden="true" /> {meta.label}
+        </span>
+        <button type="button" className="icon-btn" onClick={onClose} aria-label="Close inspector">
+          <X size={15} />
         </button>
+      </header>
+      <h3>{n.label}</h3>
+      <p className="mono small fc2-path">{where(n)}</p>
+      <div className="fc2-insp-badges">
+        <ConfidenceBadge level={n.confidence === 'unknown' ? 'unknown' : n.confidence} compact />
       </div>
-
-      <div className="node-inspector-body">
-        <h3 className="node-inspector-node-title">{node.label}</h3>
-
-        {/* Tooltip & Purpose */}
-        {node.tooltip && (
-          <div className="node-inspector-section">
-            <div className="node-inspector-section-label">Explanation</div>
-            <p className="node-inspector-text">{node.tooltip}</p>
-          </div>
-        )}
-
-        {/* File : Line Citation */}
-        <div className="node-inspector-section">
-          <div className="node-inspector-section-label">Source Citation</div>
-          <div className="node-inspector-cite-card">
-            <FileCode size={14} className="node-inspector-cite-icon" />
-            <span className="node-inspector-file-path">
-              {node.file}:{node.line ?? 1}
-            </span>
-            {onNavigateToCode && (
-              <button
-                type="button"
-                className="node-inspector-open-code-btn"
-                onClick={() => onNavigateToCode(node.file, node.line)}
-                title="Open in Code View"
-              >
-                <span>View Code</span>
-                <ExternalLink size={12} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Code Snippet / AST Expression */}
-        {node.decisionExpr ? (
-          <div className="node-inspector-section">
-            <div className="node-inspector-section-label">Decision Condition (AST)</div>
-            <pre className="node-inspector-code-block">
-              <code>{node.decisionExpr}</code>
-            </pre>
-            {node.decisionOutcomes && (
-              <div className="node-inspector-outcomes-list">
-                {node.decisionOutcomes.map((outcome, idx) => (
-                  <div key={idx} className="node-inspector-outcome-pill">
-                    <GitBranch size={12} />
-                    <span>{outcome}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {/* Data In & Data Out (Payload Moving Along Edges) */}
-        <div className="node-inspector-section">
-          <div className="node-inspector-section-label">Data In / Out Flow</div>
-          <div className="node-inspector-io-grid">
-            <div className="node-inspector-io-col">
-              <div className="node-inspector-io-header in">
-                <ArrowDown size={12} />
-                <span>Payload In</span>
-              </div>
-              {inEdges.length > 0 ? (
-                inEdges.map((e) => (
-                  <div key={e.id} className="node-inspector-io-item">
-                    <span className="node-inspector-payload-name">{e.label || 'Direct call'}</span>
-                  </div>
-                ))
-              ) : (
-                <span className="node-inspector-io-empty">Flow entry trigger</span>
-              )}
-            </div>
-
-            <div className="node-inspector-io-col">
-              <div className="node-inspector-io-header out">
-                <ArrowUp size={12} />
-                <span>Payload Out</span>
-              </div>
-              {outEdges.length > 0 ? (
-                outEdges.map((e) => (
-                  <div key={e.id} className="node-inspector-io-item">
-                    <span className="node-inspector-payload-name">{e.label || 'Direct sequence'}</span>
-                  </div>
-                ))
-              ) : (
-                <span className="node-inspector-io-empty">Terminal state</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Tools Used on Node */}
-        <div className="node-inspector-section">
-          <div className="node-inspector-section-label">Technologies Used on Node</div>
-          {node.tools.length > 0 ? (
-            <div className="node-inspector-tools-chips">
-              {node.tools.map((t) => (
-                <span key={t} className="node-inspector-tool-chip">
-                  <Wrench size={11} />
-                  <span>{t}</span>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="node-inspector-io-empty">Native project runtime</span>
+      {n.detail && <p className="small">{n.detail}</p>}
+      {n.decision && (
+        <dl className="fc2-kv">
+          <dt>Condition</dt>
+          <dd className="mono">{n.decision.condition}</dd>
+        </dl>
+      )}
+      {n.evidence.some((e) => e.snippet) && (
+        <section>
+          <h4>Code</h4>
+          {n.evidence
+            .filter((e) => e.snippet)
+            .slice(0, 4)
+            .map((e, i) => (
+              <figure key={i} className="fc2-code">
+                <code className="mono">{e.snippet}</code>
+                <figcaption className="mono small faint">{where(e)}</figcaption>
+              </figure>
+            ))}
+        </section>
+      )}
+      {(n.dataIn || n.dataOut) && (
+        <dl className="fc2-kv">
+          {n.dataIn && (
+            <>
+              <dt>Data in</dt>
+              <dd className="mono">{n.dataIn}</dd>
+            </>
           )}
-        </div>
-
-        {/* Unknown Step Reason */}
-        {node.unknownReason && (
-          <div className="node-inspector-section warning">
-            <div className="node-inspector-section-label">Trace Gap Reason</div>
-            <p className="node-inspector-warn-text">
-              <AlertTriangle size={13} />
-              <span>{node.unknownReason}</span>
-            </p>
+          {n.dataOut && (
+            <>
+              <dt>Data out</dt>
+              <dd className="mono">{n.dataOut}</dd>
+            </>
+          )}
+        </dl>
+      )}
+      {n.tools.length > 0 && (
+        <section>
+          <h4>Tools</h4>
+          <div className="fc2-chips">
+            {n.tools.map((t) => (
+              <button key={t} type="button" className="fc2-chip is-link" onClick={() => onIntelligence?.(t)} disabled={!onIntelligence}>
+                <Cpu size={12} /> {toolName(t)}
+              </button>
+            ))}
           </div>
+        </section>
+      )}
+      {n.members && (
+        <section>
+          <h4>Folded endpoints</h4>
+          <ul className="fc2-members">
+            {n.members.map((m, i) => (
+              <li key={i}>
+                <span>{m.label}</span>
+                <span className="mono small faint">{where(m)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {(incoming.length > 0 || outgoing.length > 0) && (
+        <section>
+          <h4>Connections</h4>
+          <ul className="fc2-conns">
+            {incoming.map((e) => (
+              <li key={e.id}>
+                <button type="button" className="link-btn" onClick={() => onSelect(e.source)}>
+                  ← {edgeText(e, e.source)}
+                </button>
+              </li>
+            ))}
+            {outgoing.map((e) => (
+              <li key={e.id}>
+                <button type="button" className="link-btn" onClick={() => onSelect(e.target)}>
+                  → {edgeText(e, e.target)}
+                </button>
+                <span className={`fc2-edge-kind k-${e.kind}`}>{e.kind}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <div className="fc2-insp-actions">
+        {href ? (
+          <a className="btn btn-sm" href={href} target="_blank" rel="noreferrer">
+            <ExternalLink size={13} /> Open in Code
+          </a>
+        ) : (
+          onWireframe && (
+            <button type="button" className="btn btn-sm" onClick={() => onWireframe(n.file)} title="This project has no remote; open the file in the Wireframe">
+              <ExternalLink size={13} /> Open in Code
+            </button>
+          )
+        )}
+        <button type="button" className="btn btn-sm" onClick={onFocusBranch}>
+          <Crosshair size={13} /> Focus branch
+        </button>
+        {onWireframe && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => onWireframe(n.file)}>
+            <Network size={13} /> In wireframe
+          </button>
+        )}
+        {onArchitecture && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => onArchitecture({ focus: n.file })}>
+            <Layers size={13} /> In architecture
+          </button>
+        )}
+        {n.jumpTo && onJump && (
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => onJump(n.jumpTo!)}>
+            <Share2 size={13} /> Go to flow
+          </button>
         )}
       </div>
-    </div>
+    </aside>
   );
 }

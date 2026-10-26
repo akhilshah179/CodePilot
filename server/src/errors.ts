@@ -22,7 +22,9 @@ export type ErrorCode =
   | 'oauth_not_configured'
   | 'oauth_failed'
   | 'architecture_unavailable'
-  | 'upstream';
+  | 'upstream'
+  | 'repo_empty'
+  | 'rate_limited';
 
 /** Errors carry an actionable, user-facing message; internals are logged, not returned. */
 export class AppError extends Error {

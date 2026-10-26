@@ -4,6 +4,7 @@ import type { Config } from '../config.ts';
 import { randomId, sha256 } from '../crypto.ts';
 import { now, type Db } from '../db.ts';
 import { AppError } from '../errors.ts';
+import type { AutomationStore } from '../automationStore.ts';
 import type { ArchitectureHandlers } from './architecture.ts';
 import { projectJson, type ProjectsApi } from './projects.ts';
 
@@ -23,9 +24,12 @@ interface ShareRow {
  * Read-only share links. A link is pinned to the analysis it was created from, grants access to
  * one view (wireframe or architecture) only, and can be revoked. Only a hash of the token is stored.
  */
-export function registerShareRoutes(app: FastifyInstance, config: Config, db: Db, auth: AuthStore, projects: ProjectsApi, arch: ArchitectureHandlers) {
+import type { RateLimiter } from '../rateLimit.ts';
+import { getClientKey } from '../rateLimit.ts';
+
+export function registerShareRoutes(app: FastifyInstance, config: Config, db: Db, auth: AuthStore, projects: ProjectsApi, arch: ArchitectureHandlers, automation?: AutomationStore, rateLimiter?: RateLimiter) {
   app.post<{ Params: { id: string }; Body: { kind?: string } }>('/api/projects/:id/shares', async (request) => {
-    const project = projects.getProject(request, request.params.id);
+    const project = projects.getProject(request, request.params.id, 'share:create');
     if (project.user_id !== null) auth.requireUser(request);
     const kind = request.body?.kind;
     if (kind !== 'wireframe' && kind !== 'architecture') throw new AppError('bad_request', 'kind must be wireframe or architecture.', 400);
@@ -39,13 +43,13 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, db: Db
   });
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/shares', async (request) => {
-    const project = projects.getProject(request, request.params.id);
+    const project = projects.getProject(request, request.params.id, 'project:view');
     const rows = db.prepare('SELECT * FROM shares WHERE project_id = ? AND revoked_at IS NULL ORDER BY created_at DESC').all(project.id) as unknown as ShareRow[];
     return { shares: rows.map((r) => ({ id: r.id, kind: r.kind, createdAt: r.created_at, analysisId: r.analysis_id })) };
   });
 
   app.delete<{ Params: { id: string; shareId: string } }>('/api/projects/:id/shares/:shareId', async (request) => {
-    const project = projects.getProject(request, request.params.id);
+    const project = projects.getProject(request, request.params.id, 'share:revoke');
     if (project.user_id !== null) auth.requireUser(request);
     const res = db.prepare('UPDATE shares SET revoked_at = ? WHERE id = ? AND project_id = ? AND revoked_at IS NULL').run(now(), request.params.shareId, project.id);
     if (!res.changes) throw new AppError('not_found', 'Share link not found.', 404);
@@ -53,7 +57,10 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, db: Db
   });
 
   // --- Public, read-only endpoints -------------------------------------------------------------
-  const resolve = (token: string, kind?: Kind) => {
+  const resolve = (token: string, kind?: Kind, request?: FastifyRequest, reply?: FastifyReply) => {
+    if (rateLimiter && request) {
+      rateLimiter.check(`shared:${getClientKey(request)}`, { max: 120, windowMs: 60_000 }, reply);
+    }
     const row = db.prepare('SELECT * FROM shares WHERE token_hash = ? AND revoked_at IS NULL').get(sha256(token)) as ShareRow | undefined;
     if (!row || (kind && row.kind !== kind)) throw new AppError('not_found', 'This link is invalid or has been revoked.', 404);
     return { row, ctx: projects.contextFor(row.project_id, row.analysis_id) };
@@ -75,5 +82,8 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, db: Db
   app.get('/api/shared/:token/architecture/summary', async (r: R) => arch.summary(resolve(r.params.token, 'architecture').ctx));
   app.get('/api/shared/:token/architecture/intelligence', async (r: R) => arch.intelligence(resolve(r.params.token, 'architecture').ctx));
   app.get('/api/shared/:token/architecture/export', async (r: R, reply: FastifyReply) => arch.exportArchitecture(resolve(r.params.token, 'architecture').ctx, r.query, reply));
-  app.get('/api/shared/:token/automation/main-flows', async (r: R) => arch.mainFlows(resolve(r.params.token, 'architecture').ctx));
+  if (automation) {
+    app.get('/api/shared/:token/automation/flows', async (r: R) => automation.view(resolve(r.params.token, 'architecture').ctx));
+    app.get('/api/shared/:token/automation/coverage', async (r: R) => automation.coverage(resolve(r.params.token, 'architecture').ctx));
+  }
 }

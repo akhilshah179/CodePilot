@@ -79,6 +79,9 @@ export class AuthStore {
     profile: { name: string | null; email: string | null; avatarUrl: string | null };
     linkTo?: string;
   }): string {
+    if (!input.providerUserId || typeof input.providerUserId !== 'string' || !input.providerUserId.trim()) {
+      throw new AppError('oauth_failed', 'Invalid provider user identifier.', 400);
+    }
     const existing = this.db
       .prepare('SELECT id, user_id FROM accounts WHERE provider = ? AND provider_user_id = ?')
       .get(input.provider, input.providerUserId) as { id: string; user_id: string } | undefined;
@@ -87,7 +90,8 @@ export class AuthStore {
 
     let userId = existing?.user_id ?? input.linkTo;
     if (existing && input.linkTo && existing.user_id !== input.linkTo) {
-      throw new AppError('oauth_failed', 'This GitHub account is already connected to a different CodePilot user. Sign in with that account instead.', 409);
+      const providerName = input.provider === 'github' ? 'GitHub' : 'Google';
+      throw new AppError('oauth_failed', `This ${providerName} account is already connected to a different CodePilot user. Sign in with that account instead.`, 409);
     }
     if (!userId) {
       userId = randomId();
@@ -111,6 +115,18 @@ export class AuthStore {
         .run(randomId(), userId, input.provider, input.providerUserId, input.login, tokenEnc, input.scopes ?? null, ts, ts);
     }
     return userId;
+  }
+
+  deleteUser(userId: string) {
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  }
+
+  exportUserData(userId: string) {
+    const user = this.db.prepare('SELECT id, name, email, avatar_url, created_at FROM users WHERE id = ?').get(userId);
+    const accounts = this.db.prepare('SELECT provider, provider_user_id, login, created_at FROM accounts WHERE user_id = ?').all(userId);
+    const projects = this.db.prepare('SELECT id, owner, repo, full_name, default_branch, branch, created_at FROM projects WHERE user_id = ?').all(userId);
+    const shares = this.db.prepare('SELECT id, project_id, kind, created_at, revoked_at FROM shares WHERE created_by = ?').all(userId);
+    return { user, accounts, projects, shares, exportedAt: now() };
   }
 
   /** Decrypted GitHub token for server-side use only. */

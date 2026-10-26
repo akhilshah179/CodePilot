@@ -17,18 +17,6 @@ export interface ArchitectureHandlers {
   intelligence(ctx: GraphContext): unknown;
   exportArchitecture(ctx: GraphContext, q: ArchQuery, reply: FastifyReply): Promise<unknown>;
   regenerate(ctx: GraphContext): unknown;
-  automationOverview(ctx: GraphContext): unknown;
-  automationGroup(ctx: GraphContext, groupId: string): unknown;
-  automationFlows(ctx: GraphContext): unknown;
-  automationFlow(ctx: GraphContext, flowId: string): unknown;
-  pinHeroFlow(ctx: GraphContext, flowId?: string): unknown;
-  mainFlows(ctx: GraphContext): unknown;
-  replaceMainFlow(ctx: GraphContext, flowId: string, replacementFlowId: string): unknown;
-  renameMainFlow(ctx: GraphContext, flowId: string, name: string): unknown;
-  automationFlowsV4(ctx: GraphContext): unknown;
-  automationCoverageV4(ctx: GraphContext): unknown;
-  replaceFlowV4(ctx: GraphContext, flowId: string, replacementFlowId: string): unknown;
-  renameFlowV4(ctx: GraphContext, flowId: string, name: string): unknown;
 }
 
 const pick = (arch: Architecture, ids: Iterable<string>): Record<string, Evidence> => {
@@ -58,31 +46,7 @@ export function architectureHandlers(projects: ProjectsApi, store: ArchitectureS
         patterns: a.summary.patterns,
         totals: a.summary.totals,
         system: a.system,
-        flows: a.flows.map((f) => ({
-          id: f.id,
-          title: f.title,
-          trigger: f.trigger,
-          variant: f.variant,
-          confidence: f.confidence,
-          steps: f.steps.length,
-          action: f.action,
-          lanes: f.lanes,
-          flowType: f.flowType,
-          domain: f.domain,
-          journeyId: f.journeyId,
-          journeyTitle: f.journeyTitle,
-          importance: f.importance,
-          clusterId: f.clusterId,
-          capabilityId: f.capabilityId,
-          whyBelongsToCapability: f.whyBelongsToCapability,
-        })),
-        journeys: a.journeys,
-        hierarchy: a.hierarchy,
-        automation: a.automation,
-        heroFlow: a.heroFlow,
-        capabilities: a.capabilities,
-        globalMiddleware: a.globalMiddleware,
-        traceCoverage: a.traceCoverage,
+        flows: a.flows.map((f) => ({ id: f.id, title: f.title, trigger: f.trigger, variant: f.variant, confidence: f.confidence, steps: f.steps.length, action: f.action, lanes: f.lanes })),
       },
     };
   };
@@ -119,118 +83,7 @@ export function architectureHandlers(projects: ProjectsApi, store: ArchitectureS
 
     flows(ctx) {
       const a = load(ctx).architecture;
-      return {
-        flows: a.flows,
-        journeys: a.journeys,
-        hierarchy: a.hierarchy,
-        automation: a.automation,
-        heroFlow: a.heroFlow,
-        capabilities: a.capabilities,
-        globalMiddleware: a.globalMiddleware,
-        traceCoverage: a.traceCoverage,
-        evidence: pick(a, a.flows.flatMap((f) => f.steps.flatMap((s) => s.evidence))),
-      };
-    },
-
-    automationOverview(ctx) {
-      const a = load(ctx).architecture;
-      return {
-        ...projects.graphMeta(ctx.project, ctx.analysis),
-        automation: a.automation,
-        heroFlow: a.heroFlow,
-        capabilities: a.capabilities,
-        globalMiddleware: a.globalMiddleware,
-        traceCoverage: a.traceCoverage,
-        evidence: a.automation?.evidence ?? {},
-      };
-    },
-
-    automationGroup(ctx, groupId) {
-      const a = load(ctx).architecture;
-      const group = a.capabilities?.find((c) => c.id === groupId);
-      if (!group) throw new AppError('not_found', 'Capability group not found.', 404);
-      const memberFlows = a.flows.filter((f) => group.flowIds.includes(f.id));
-      const evIds = new Set([...group.evidence, ...memberFlows.flatMap((f) => f.steps.flatMap((s) => s.evidence))]);
-      return {
-        group,
-        memberFlows,
-        mergedPatterns: group.mergedPatterns,
-        evidence: pick(a, evIds),
-      };
-    },
-
-    automationFlows(ctx) {
-      const a = load(ctx).architecture;
-      return {
-        flows: a.flows,
-        journeys: a.journeys,
-        capabilities: a.capabilities,
-        hierarchy: a.hierarchy,
-        evidence: pick(a, a.flows.flatMap((f) => f.steps.flatMap((s) => s.evidence))),
-      };
-    },
-
-    automationFlow(ctx, flowId) {
-      const a = load(ctx).architecture;
-      const flow = a.flows.find((f) => f.id === flowId);
-      if (!flow) throw new AppError('not_found', 'Flow not found.', 404);
-      return {
-        flow,
-        evidence: pick(a, flow.steps.flatMap((s) => s.evidence)),
-      };
-    },
-
-    pinHeroFlow(ctx, flowId) {
-      const rec = load(ctx);
-      const a = rec.architecture;
-      if (flowId) {
-        const targetFlow = a.flows.find((f) => f.id === flowId);
-        if (!targetFlow) throw new AppError('not_found', 'Target flow not found to pin as hero.', 404);
-        if (a.heroFlow) {
-          a.heroFlow.title = targetFlow.title;
-          a.heroFlow.isCustomPinned = true;
-        }
-      }
-      return { ok: true, heroFlow: a.heroFlow };
-    },
-
-    mainFlows(ctx) {
-      const rec = load(ctx);
-      return store.getMainFlows(ctx.project.id, rec);
-    },
-
-    replaceMainFlow(ctx, flowId, replacementFlowId) {
-      store.replaceMainFlow(ctx.project.id, flowId, replacementFlowId);
-      const rec = load(ctx);
-      return { ok: true, mainFlows: store.getMainFlows(ctx.project.id, rec) };
-    },
-
-    renameMainFlow(ctx, flowId, name) {
-      store.renameMainFlow(ctx.project.id, flowId, name);
-      const rec = load(ctx);
-      return { ok: true, mainFlows: store.getMainFlows(ctx.project.id, rec) };
-    },
-
-    automationFlowsV4(ctx) {
-      const rec = load(ctx);
-      return store.getFlowsV4(ctx.project.id, rec);
-    },
-
-    automationCoverageV4(ctx) {
-      const rec = load(ctx);
-      return store.getCoverageV4(ctx.project.id, rec);
-    },
-
-    replaceFlowV4(ctx, flowId, replacementFlowId) {
-      store.replaceFlowV4(ctx.project.id, flowId, replacementFlowId);
-      const rec = load(ctx);
-      return { ok: true, ...store.getFlowsV4(ctx.project.id, rec) };
-    },
-
-    renameFlowV4(ctx, flowId, name) {
-      store.renameFlowV4(ctx.project.id, flowId, name);
-      const rec = load(ctx);
-      return { ok: true, ...store.getFlowsV4(ctx.project.id, rec) };
+      return { flows: a.flows, evidence: pick(a, a.flows.flatMap((f) => f.steps.flatMap((s) => s.evidence))) };
     },
 
     /** Technology explanations for exactly this analysis snapshot (commit), with every cited line. */
@@ -362,7 +215,9 @@ function onePager(a: Architecture, svg: string, title: string, subtitle: string)
   });
 }
 
-export function registerArchitectureRoutes(app: FastifyInstance, projects: ProjectsApi, store: ArchitectureStore): ArchitectureHandlers {
+import { getClientKey, type RateLimiter } from '../rateLimit.ts';
+
+export function registerArchitectureRoutes(app: FastifyInstance, projects: ProjectsApi, store: ArchitectureStore, rateLimiter?: RateLimiter): ArchitectureHandlers {
   const h = architectureHandlers(projects, store);
   type Req = FastifyRequest<{ Params: { id: string }; Querystring: ArchQuery }>;
   const ctx = (r: Req) => projects.completedGraph(r, r.params.id);
@@ -373,58 +228,17 @@ export function registerArchitectureRoutes(app: FastifyInstance, projects: Proje
   app.get('/api/projects/:id/architecture/flows', async (r: Req) => h.flows(ctx(r)));
   app.get('/api/projects/:id/architecture/summary', async (r: Req) => h.summary(ctx(r)));
   app.get('/api/projects/:id/architecture/intelligence', async (r: Req) => h.intelligence(ctx(r)));
-  app.get('/api/projects/:id/architecture/export', async (r: Req, reply: FastifyReply) => h.exportArchitecture(ctx(r), r.query, reply));
-  app.post('/api/projects/:id/architecture/regenerate', async (r: Req) => h.regenerate(ctx(r)));
-
-  // Automation Engine V2 routes
-  app.get('/api/projects/:id/automation/overview', async (r: Req) => h.automationOverview(ctx(r)));
-  app.get('/projects/:id/automation/overview', async (r: Req) => h.automationOverview(ctx(r)));
-
-  app.get('/api/projects/:id/automation/groups/:groupId', async (r: FastifyRequest<{ Params: { id: string; groupId: string }; Querystring: ArchQuery }>) =>
-    h.automationGroup(projects.completedGraph(r, r.params.id), r.params.groupId),
-  );
-  app.get('/projects/:id/automation/groups/:groupId', async (r: FastifyRequest<{ Params: { id: string; groupId: string }; Querystring: ArchQuery }>) =>
-    h.automationGroup(projects.completedGraph(r, r.params.id), r.params.groupId),
-  );
-
-  // Automation Engine V4 routes: Real Flowcharts of the Main Flows
-  app.get('/api/projects/:id/automation/flows', async (r: Req) => h.automationFlowsV4(ctx(r)));
-  app.get('/projects/:id/automation/flows', async (r: Req) => h.automationFlowsV4(ctx(r)));
-
-  app.get('/api/projects/:id/automation/coverage', async (r: Req) => h.automationCoverageV4(ctx(r)));
-  app.get('/projects/:id/automation/coverage', async (r: Req) => h.automationCoverageV4(ctx(r)));
-
-  app.post('/api/projects/:id/automation/flows/:flowId/replace', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { replacementFlowId?: string }; Querystring: ArchQuery }>) =>
-    h.replaceFlowV4(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.replacementFlowId ?? ''),
-  );
-  app.post('/projects/:id/automation/flows/:flowId/replace', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { replacementFlowId?: string }; Querystring: ArchQuery }>) =>
-    h.replaceFlowV4(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.replacementFlowId ?? ''),
-  );
-
-  app.patch('/api/projects/:id/automation/flows/:flowId', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { name?: string }; Querystring: ArchQuery }>) =>
-    h.renameFlowV4(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.name ?? ''),
-  );
-  app.patch('/projects/:id/automation/flows/:flowId', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { name?: string }; Querystring: ArchQuery }>) =>
-    h.renameFlowV4(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.name ?? ''),
-  );
-
-  // Automation Engine V3 routes: Four Main Flows (backward compatibility)
-  app.get('/api/projects/:id/automation/main-flows', async (r: Req) => h.mainFlows(ctx(r)));
-  app.get('/projects/:id/automation/main-flows', async (r: Req) => h.mainFlows(ctx(r)));
-
-  app.post('/api/projects/:id/automation/main-flows/:flowId/replace', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { replacementFlowId?: string }; Querystring: ArchQuery }>) =>
-    h.replaceMainFlow(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.replacementFlowId ?? ''),
-  );
-  app.post('/projects/:id/automation/main-flows/:flowId/replace', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { replacementFlowId?: string }; Querystring: ArchQuery }>) =>
-    h.replaceMainFlow(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.replacementFlowId ?? ''),
-  );
-
-  app.patch('/api/projects/:id/automation/main-flows/:flowId', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { name?: string }; Querystring: ArchQuery }>) =>
-    h.renameMainFlow(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.name ?? ''),
-  );
-  app.patch('/projects/:id/automation/main-flows/:flowId', async (r: FastifyRequest<{ Params: { id: string; flowId: string }; Body?: { name?: string }; Querystring: ArchQuery }>) =>
-    h.renameMainFlow(projects.completedGraph(r, r.params.id), r.params.flowId, r.body?.name ?? ''),
-  );
-
+  app.get('/api/projects/:id/architecture/export', async (r: Req, reply: FastifyReply) => {
+    if (rateLimiter) {
+      rateLimiter.check(`export:${getClientKey(r)}`, { max: 20, windowMs: 60_000 }, reply);
+    }
+    return h.exportArchitecture(ctx(r), r.query, reply);
+  });
+  app.post('/api/projects/:id/architecture/regenerate', async (r: Req, reply: FastifyReply) => {
+    if (rateLimiter) {
+      rateLimiter.check(`regen:${getClientKey(r)}`, { max: 10, windowMs: 60_000 }, reply);
+    }
+    return h.regenerate(projects.completedGraph(r, r.params.id, 'analysis:trigger'));
+  });
   return h;
 }

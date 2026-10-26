@@ -15,7 +15,7 @@
 /** Bump when extraction output changes shape or meaning. */
 export const ARCH_EXTRACTOR_VERSION = 2;
 /** Bump when detection rules change; cached architectures with an older version are recomputed. */
-export const ARCH_DETECTOR_VERSION = 6;
+export const ARCH_DETECTOR_VERSION = 5;
 
 /** `strong` is displayed as "strong inference". */
 export type Confidence = 'confirmed' | 'strong' | 'possible';
@@ -240,6 +240,32 @@ export interface UiTriggerFact {
 }
 
 /** Request middleware: global hooks, `app.use(...)`, framework middleware and guards. */
+/**
+ * A decision in code whose branch leaves early: `if (…) { throw / return / respond / redirect }`,
+ * or a try/catch. Only these change what a request does next.
+ */
+export interface DecisionFact {
+  file: string;
+  /** Line of the `if` / `try`. */
+  line: number;
+  /** Last line of the branch (the `if` block, or the catch block). */
+  endLine: number;
+  via: 'if' | 'try';
+  /** Read from the exit (status code, message) first, then the condition text. */
+  kind: 'auth' | 'validation' | 'not-found' | 'conflict' | 'limit' | 'cache' | 'flag' | 'error' | 'condition';
+  /** Condition as written (redacted), or for try/catch a description of the catch. */
+  condition: string;
+  /** The condition tests for absence or failure (`!user`, `x is None`): the exit is the "no" branch. */
+  negative: boolean;
+  /** What the branch does. `continue`: a catch that handles the error and carries on. */
+  exit: { line: number; kind: 'throw' | 'respond' | 'redirect' | 'return' | 'continue'; status?: number; message?: string; snippet: string };
+  /** For try/catch: the catch line. */
+  catchLine?: number;
+  /** For try/catch: the error is caught without leaving the function. */
+  swallowed?: boolean;
+  snippet: string;
+}
+
 export interface MiddlewareFact {
   file: string;
   line: number;
@@ -494,6 +520,8 @@ export interface ArchitectureFacts {
   httpCalls: HttpCallFact[];
   uiTriggers: UiTriggerFact[];
   middleware: MiddlewareFact[];
+  /** Early-exit decisions and try/catch blocks (absent in facts extracted before they were recorded). */
+  decisions?: DecisionFact[];
   envRefs: EnvRefFact[];
   definitions: DefinitionFact[];
   configs: ConfigFact[];
@@ -680,12 +708,6 @@ export interface FlowStep {
    * not proven to run); an inferred cache branch is strong; an unresolved hop is unknown.
    */
   confidence?: IntelConfidence;
-  /** When set, edge into this step originates at step index parentStepIndex instead of previous step. Useful for branching journey flows. */
-  parentStepIndex?: number;
-  /** When true, this step represents global middleware registered across the whole app */
-  isGlobalMiddleware?: boolean;
-  /** When step could not be resolved, the specific source-grounded reason */
-  unresolvedReason?: UnresolvedStepReason;
 }
 
 export const FLOW_STAGES = ['user', 'frontend', 'transport', 'backend', 'services', 'tools', 'data', 'external', 'response'] as const;
@@ -720,44 +742,6 @@ export type FlowStepKind =
   | 'state'
   | 'unknown';
 
-export type FlowType = 'user-journey' | 'request' | 'background' | 'system' | 'external';
-
-export interface FlowCorrelation {
-  type: 'page-lifecycle' | 'user-action' | 'event-handler' | 'function-chain' | 'route-call' | 'async-chain' | 'system-endpoint' | 'unknown';
-  reason: string;
-  sourceFile?: string;
-  component?: string;
-  handler?: string;
-  evidence?: string[];
-}
-
-export interface FlowJourney {
-  id: string;
-  domain: string;
-  title: string;
-  type: FlowType;
-  flowId: string;
-  correlation: FlowCorrelation;
-  evidence: string[];
-  subflowIds: string[];
-  description?: string;
-}
-
-export interface FlowHierarchyCounts {
-  journeys: number;
-  requests: number;
-  background: number;
-  system: number;
-  external: number;
-  totalTracedUnits: number;
-}
-
-export interface FlowHierarchy {
-  journeys: FlowJourney[];
-  counts: FlowHierarchyCounts;
-  domains: string[];
-}
-
 export interface Flow {
   id: string;
   title: string;
@@ -776,317 +760,6 @@ export interface Flow {
   /** Display name: the UI action when there is one, else the route or job. */
   name?: string;
   index?: FlowIndex;
-  /** Hierarchical Flow Model classification: user-journey, request, background, system, external */
-  flowType?: FlowType;
-  /** Hierarchical domain: e.g. AUTHENTICATION, PROJECT MANAGEMENT, ANALYSIS, SYSTEM, BACKGROUND, UNKNOWN RELATIONSHIP */
-  domain?: string;
-  /** Journey this execution unit belongs to, if correlated into one */
-  journeyId?: string;
-  journeyTitle?: string;
-  parentJourneyId?: string;
-  /** For journey execution flows, child technical subflow IDs */
-  subflowIds?: string[];
-  /** Grounded correlation evidence establishing why this flow is grouped or kept independent */
-  correlation?: FlowCorrelation;
-  /** Architectural importance ranking (HIGH, MEDIUM, LOW) with explicit reasons */
-  importance?: FlowImportance;
-  /** ID of near-duplicate cluster if this flow belongs to one */
-  clusterId?: string;
-  /** Capability this flow belongs to */
-  capabilityId?: string;
-  /** Explanation of why this flow belongs to its capability */
-  whyBelongsToCapability?: string;
-}
-
-/* ---------------------------------------------------------------- automation engine v2 */
-
-export type HeroJoinType =
-  | 'route-param-reuse'
-  | 'response-consumption'
-  | 'database-write-read'
-  | 'enqueue-worker'
-  | 'navigation-call'
-  | 'function-call'
-  | 'unlinked';
-
-export interface HeroJoin {
-  sourceFlowId: string;
-  targetFlowId: string;
-  sourceFile: string;
-  sourceLine?: number;
-  targetFile: string;
-  targetLine?: number;
-  relationshipType: HeroJoinType;
-  confidence: 'confirmed' | 'strong' | 'possible' | 'unknown';
-  explanation: string;
-  evidence: string[];
-}
-
-export interface HeroStage {
-  id: string;
-  stageIndex: number;
-  title: string;
-  trigger: string;
-  tool?: string;
-  technology?: string;
-  flowId: string;
-  isBackground?: boolean;
-  evidence: string[];
-  durationMs?: number;
-  joinWithNext?: HeroJoin;
-  subStepsCount: number;
-  subStepsSummary?: string[];
-}
-
-export interface HeroFlow {
-  id: string;
-  title: string;
-  description: string;
-  stages: HeroStage[];
-  backgroundStages: HeroStage[];
-  joins: HeroJoin[];
-  evidence: string[];
-  confidence: 'confirmed' | 'strong' | 'possible' | 'unknown';
-  isCustomPinned?: boolean;
-}
-
-export type FlowImportanceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
-
-export interface FlowImportance {
-  level: FlowImportanceLevel;
-  score: number;
-  reasons: string[];
-}
-
-export interface NearDuplicateCluster {
-  id: string;
-  title: string;
-  representativeFlowId: string;
-  memberFlowIds: string[];
-  differences: string[];
-  evidence: string[];
-}
-
-export interface CapabilityGroup {
-  id: string;
-  name: string;
-  summary: string;
-  flowCount: number;
-  requestCount: number;
-  externalServices: string[];
-  importantTechnologies: string[];
-  flowIds: string[];
-  whyBelongs: Record<string, string>;
-  mergedPatterns: NearDuplicateCluster[];
-  evidence: string[];
-}
-
-export interface GlobalMiddlewareStep {
-  id: string;
-  name: string;
-  file: string;
-  line: number;
-  phase?: string;
-  explanation: string;
-  evidence: string[];
-}
-
-export interface GlobalMiddleware {
-  steps: GlobalMiddlewareStep[];
-  label: string;
-  evidence: string[];
-}
-
-export type UnresolvedStepReason =
-  | 'dynamic call'
-  | 'callback'
-  | 'runtime-generated target'
-  | 'unavailable dependency source'
-  | 'unknown';
-
-export interface UnresolvedStep {
-  flowId: string;
-  flowTitle: string;
-  file: string;
-  line?: number;
-  stepIndex: number;
-  reason: UnresolvedStepReason;
-  explanation: string;
-}
-
-export interface TraceCoverage {
-  entryPoints: number;
-  totalFlows: number;
-  requests: number;
-  fullyTracedFlows: number;
-  unknownSteps: number;
-  backgroundFlows: number;
-  coveragePercent: number;
-  unresolvedSteps: UnresolvedStep[];
-}
-
-/* ---------------------------------------------------------------- automation engine v3: four main flows */
-
-export interface MainFlowStage {
-  id: string;
-  stageIndex: number;
-  title: string;
-  trigger: string;
-  tools: string[];
-  file: string;
-  line?: number;
-  isBackground?: boolean;
-  branch?: 'async' | 'cache-hit' | 'cache-miss' | 'fork';
-  forkLabel?: string;
-  isUnknown?: boolean;
-  unresolvedReason?: UnresolvedStepReason;
-  subStepsCount: number;
-  subStepsSummary?: string[];
-  evidence: string[];
-}
-
-export interface MainFlowJoin {
-  sourceStageId: string;
-  targetStageId: string;
-  sourceFile: string;
-  sourceLine?: number;
-  targetFile: string;
-  targetLine?: number;
-  relationshipType: HeroJoinType;
-  confidence: 'confirmed' | 'strong' | 'possible' | 'unknown';
-  explanation: string;
-  evidence: string[];
-}
-
-export interface MainFlowFoldedMember {
-  id: string;
-  name: string;
-  kind: 'route' | 'action' | 'job' | 'redirect' | 'health' | 'share' | 'static' | 'minor';
-  detail: string;
-  file: string;
-  line?: number;
-  reason: string;
-  evidence?: string[];
-}
-
-export interface MainFlowStepNarrative {
-  stepNumber: number;
-  title: string;
-  narrative: string;
-  file: string;
-  line?: number;
-}
-
-export interface MainFlowToolUsage {
-  name: string;
-  role: string;
-  file?: string;
-  line?: number;
-}
-
-export interface MainFlowDataInAndOut {
-  inputs: string[];
-  stored: string[];
-  returned: string[];
-}
-
-export interface MainFlowFailurePoint {
-  failurePoint: string;
-  handling: string;
-  userVisibleImpact: string;
-  file?: string;
-  line?: number;
-}
-
-export interface MainFlowIncludedSmallerFlow {
-  name: string;
-  detail: string;
-  file?: string;
-  line?: number;
-}
-
-export interface MainFlowConfidenceStats {
-  percent: number;
-  fullyTracedCount: number;
-  totalCount: number;
-  unknownSteps: { stage: string; file: string; line?: number; reason: string }[];
-}
-
-export interface MainFlowExplanation {
-  whatItDoes: string;
-  whyItExists: string;
-  stepByStep: MainFlowStepNarrative[];
-  toolsAndServices: MainFlowToolUsage[];
-  dataInAndOut: MainFlowDataInAndOut;
-  ifSomethingFails: MainFlowFailurePoint[];
-  includedSmallerFlows: MainFlowIncludedSmallerFlow[];
-  confidence: MainFlowConfidenceStats;
-}
-
-export interface MainFlow {
-  id: string;
-  name: string;
-  purpose: string;
-  stepCount: number;
-  tools: string[];
-  stages: MainFlowStage[];
-  backgroundStages: MainFlowStage[];
-  joins: MainFlowJoin[];
-  foldedMembers: MainFlowFoldedMember[];
-  explanation: MainFlowExplanation;
-  confidence: 'confirmed' | 'strong' | 'possible' | 'unknown';
-  coveragePercent: number;
-  whyChosen: string;
-  isCustomRenamed?: boolean;
-  customName?: string;
-  evidence: string[];
-}
-
-export interface MainFlowCandidate {
-  id: string;
-  name: string;
-  purpose: string;
-  stepCount: number;
-  tools: string[];
-  score: number;
-}
-
-export interface MainFlowsCoverage {
-  totalEntryPoints: number;
-  coveredEntryPoints: number;
-  minorFoldedOrOmittedCount: number;
-  coveragePercent: number;
-  foldedItems: MainFlowFoldedMember[];
-}
-
-export interface MainFlowsOverview {
-  flows: MainFlow[];
-  coverage: MainFlowsCoverage;
-  globalMiddleware: GlobalMiddleware;
-  isStaticFrontendOnly?: boolean;
-  staticFrontendReason?: string;
-  allFlowCandidates: MainFlowCandidate[];
-  evidence: Record<string, Evidence>;
-}
-
-export interface AutomationOverview {
-  heroFlow: HeroFlow;
-  capabilities: CapabilityGroup[];
-  globalMiddleware: GlobalMiddleware;
-  traceCoverage: TraceCoverage;
-  mainFlows?: MainFlowsOverview;
-  counts: {
-    mainFlow: number;
-    capabilities: number;
-    flows: number;
-    requests: number;
-    background: number;
-    system: number;
-    external: number;
-    totalTracedUnits: number;
-  };
-  isStaticFrontendOnly?: boolean;
-  evidence: Record<string, Evidence>;
 }
 
 /* ---------------------------------------------------------------- system map */
@@ -1211,19 +884,6 @@ export interface Architecture {
   nodes: ArchNode[];
   edges: ArchEdge[];
   flows: Flow[];
-  /** Hierarchical Flow Model: grouped user & system journeys backed by evidence */
-  journeys?: FlowJourney[];
-  /** Full hierarchy with domains, counts and journey structures */
-  hierarchy?: FlowHierarchy;
-  /** Automation Engine V2: Project Story, Hero Pipeline, Capability Groups, and Coverage */
-  automation?: AutomationOverview;
-  heroFlow?: HeroFlow;
-  capabilities?: CapabilityGroup[];
-  globalMiddleware?: GlobalMiddleware;
-  traceCoverage?: TraceCoverage;
-  mainFlows?: MainFlowsOverview;
-  flowsV4?: FlowV4[];
-  automationV4?: AutomationOverviewV4;
   evidence: Record<string, Evidence>;
   summary: ArchitectureSummary;
   blast: Record<string, BlastRadius>;
@@ -1231,116 +891,6 @@ export interface Architecture {
   system: SystemMap;
   /** What each technology does in this repository, and the evidence for it. */
   technologies: TechIntel[];
-}
-
-/* ---------------------------------------------------------------- Automation Engine V4: Real Flowcharts */
-
-export type FlowNodeType =
-  | 'trigger'
-  | 'ui_step'
-  | 'request'
-  | 'server_step'
-  | 'decision'
-  | 'data_store'
-  | 'external_service'
-  | 'background_job'
-  | 'end'
-  | 'jump'
-  | 'unknown';
-
-export type FlowchartLane = 'user' | 'frontend' | 'backend' | 'data' | 'external';
-
-export type FlowEdgeKind = 'sequence' | 'true' | 'false' | 'error' | 'async' | 'jump' | 'unknown';
-
-export interface FlowNode {
-  id: string;
-  flowId: string;
-  type: FlowNodeType;
-  label: string;
-  file: string;
-  line: number;
-  snippetRef?: string;
-  snippet?: string;
-  tools: string[];
-  lane: FlowchartLane;
-  tooltip?: string;
-  decisionExpr?: string;
-  decisionOutcomes?: string[];
-  dataOperation?: 'read' | 'write';
-  targetFlowId?: string;
-  jumpTargetFlow?: string;
-  unresolvedReason?: string;
-  unknownReason?: string;
-  similarEndpoints?: { name: string; route: string; file: string; line: number }[];
-  evidence: string[];
-}
-
-export interface FlowEdge {
-  id: string;
-  flowId: string;
-  source: string;
-  target: string;
-  kind: FlowEdgeKind;
-  label?: string;
-  timer?: string;
-  evidence: string[];
-}
-
-export interface FlowSummary {
-  whatItDoes: string;
-  dataMoving: string;
-  failureHandling: string;
-  whyItExists?: string;
-}
-
-export interface FlowV4 {
-  id: string;
-  projectId?: string;
-  name: string;
-  summary: FlowSummary;
-  tools: string[];
-  nodes: FlowNode[];
-  edges: FlowEdge[];
-  triggerNodeId: string;
-  endNodeIds: string[];
-  coverage?: number;
-  confidence: number;
-  pinnedByUser?: boolean;
-  customName?: string;
-  isCustomRenamed?: boolean;
-  purpose?: string;
-  allCandidates?: { id: string; name: string; tools: string[]; summary: FlowSummary; purpose?: string }[];
-}
-
-export interface EntryPointItem {
-  id: string;
-  name: string;
-  route?: string;
-  file: string;
-  line: number;
-  kind: 'route' | 'ui' | 'job' | 'handler';
-  disposition: 'shown' | 'folded' | 'omitted';
-  reason?: string;
-}
-
-export interface AutomationCoverageV4 {
-  totalEntryPoints: number;
-  shownCount: number;
-  foldedCount: number;
-  omittedCount: number;
-  shown: EntryPointItem[];
-  folded: EntryPointItem[];
-  omitted: EntryPointItem[];
-}
-
-export interface AutomationOverviewV4 {
-  flows: FlowV4[];
-  coverage: AutomationCoverageV4;
-  globalMiddleware: GlobalMiddleware;
-  allFlowCandidates: { id: string; name: string; tools: string[]; nodeCount: number }[];
-  isStaticFrontendOnly?: boolean;
-  staticFrontendReason?: string;
-  evidence: Record<string, Evidence>;
 }
 
 /* ---------------------------------------------------------------- technology intelligence */
