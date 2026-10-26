@@ -42,16 +42,35 @@ function loadDotEnv(file: string) {
   }
 }
 
+/**
+ * Validates and converts a port value to a valid TCP port number (1-65535).
+ * Throws a descriptive error if the value is invalid.
+ */
+export function parsePort(value: unknown, defaultPort = 8787): number {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    return defaultPort;
+  }
+  const str = typeof value === 'string' ? value.trim() : String(value);
+  const num = Number(str);
+  if (!Number.isInteger(num) || num < 1 || num > 65535) {
+    throw new Error(`Invalid port: "${value}". Port must be a valid integer between 1 and 65535.`);
+  }
+  return num;
+}
+
 export function loadConfig(overrides: Partial<Config> = {}): Config {
   const repoRoot = path.resolve(import.meta.dirname, '../..');
   loadDotEnv(path.join(repoRoot, '.env'));
   const env = process.env;
-  const production = env.NODE_ENV === 'production';
+  const isRender = Boolean(env.RENDER);
+  const production = overrides.production ?? (env.NODE_ENV === 'production' || isRender);
   const dataDir = overrides.dataDir ?? path.resolve(repoRoot, env.DATA_DIR ?? '.data');
   mkdirSync(dataDir, { recursive: true });
 
   let tokenKey: Buffer;
-  if (env.TOKEN_ENCRYPTION_KEY) {
+  if (overrides.tokenKey) {
+    tokenKey = overrides.tokenKey;
+  } else if (env.TOKEN_ENCRYPTION_KEY) {
     tokenKey = Buffer.from(env.TOKEN_ENCRYPTION_KEY, 'base64');
     if (tokenKey.length !== 32) throw new Error('TOKEN_ENCRYPTION_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32).');
   } else if (production) {
@@ -65,11 +84,32 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
 
   const devGithubToken = !production && env.DEV_GITHUB_TOKEN ? env.DEV_GITHUB_TOKEN : undefined;
 
+  // On Render, process.env.PORT is injected dynamically and has highest priority.
+  let rawPort: unknown;
+  if (isRender && env.PORT !== undefined) {
+    rawPort = env.PORT;
+  } else if (overrides.port !== undefined) {
+    rawPort = overrides.port;
+  } else if (env.PORT !== undefined) {
+    rawPort = env.PORT;
+  } else {
+    rawPort = 8787;
+  }
+  const port = parsePort(rawPort, 8787);
+
+  // In production (and on Render), bind to 0.0.0.0 so external port scans and ingress succeed.
+  // In local development, preserve default binding to 127.0.0.1.
+  const defaultHost = production ? '0.0.0.0' : '127.0.0.1';
+  let rawHost = overrides.host ?? env.HOST;
+  if (isRender && (rawHost === '127.0.0.1' || rawHost === 'localhost')) {
+    // Prevent accidental localhost binding from a .env file on Render
+    rawHost = '0.0.0.0';
+  }
+  const host = rawHost ?? defaultHost;
+
   return {
-    port: Number(env.PORT ?? 8787),
-    host: env.HOST ?? '127.0.0.1',
     production,
-    appOrigin: (env.APP_ORIGIN ?? 'http://localhost:5175').replace(/\/$/, ''),
+    appOrigin: (overrides.appOrigin ?? env.APP_ORIGIN ?? 'http://localhost:5175').replace(/\/$/, ''),
     dataDir,
     github: {
       clientId: env.GITHUB_CLIENT_ID || undefined,
@@ -77,22 +117,30 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       apiUrl: (env.GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
       webUrl: (env.GITHUB_WEB_URL ?? 'https://github.com').replace(/\/$/, ''),
       oauthUrl: (env.GITHUB_OAUTH_URL ?? 'https://github.com').replace(/\/$/, ''),
+      ...overrides.github,
     },
-    google: { clientId: env.GOOGLE_CLIENT_ID || undefined, clientSecret: env.GOOGLE_CLIENT_SECRET || undefined },
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID || undefined,
+      clientSecret: env.GOOGLE_CLIENT_SECRET || undefined,
+      ...overrides.google,
+    },
     tokenKey,
     devGithubToken,
     maxRepoSizeMb: Number(env.MAX_REPO_SIZE_MB ?? 1024),
     cloneTimeoutMs: Number(env.CLONE_TIMEOUT_MS ?? 5 * 60_000),
     analysisConcurrency: Number(env.ANALYSIS_CONCURRENCY ?? 2),
-    sampleRoot: env.SAMPLE_DISABLED === '1' ? undefined : repoRoot,
-    webDist: path.join(repoRoot, 'web/dist'),
+    sampleRoot: overrides.sampleRoot !== undefined ? overrides.sampleRoot : (env.SAMPLE_DISABLED === '1' ? undefined : repoRoot),
+    webDist: overrides.webDist ?? path.join(repoRoot, 'web/dist'),
     collective: {
       // Privacy floors: configuration can raise the thresholds, never lower them below these.
       minN: Math.max(10, Number(env.COLLECTIVE_MIN_N ?? 20) || 20),
       minCell: Math.max(3, Number(env.COLLECTIVE_MIN_CELL ?? 5) || 5),
       reviewers: (env.COLLECTIVE_REVIEWERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       dbFile: 'collective.sqlite',
+      ...overrides.collective,
     },
     ...overrides,
+    port,
+    host,
   };
 }
