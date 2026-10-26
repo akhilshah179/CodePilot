@@ -1,3 +1,4 @@
+```typescript
 import { buildApp, startSampleAnalysis } from './app.ts';
 import { loadConfig } from './config.ts';
 
@@ -13,10 +14,18 @@ if (!config.github.clientId) {
 }
 
 startSampleAnalysis(ctx, config);
-await ctx.app.listen({ port: config.port, host: config.host });
+
+// Render deployment configuration
+const port = Number(process.env.PORT) || config.port;
+const host = process.env.HOST || '0.0.0.0';
+
+await ctx.app.listen({ port, host });
+
+ctx.app.log.info(`CodePilot server listening on ${host}:${port}`);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     ctx.app.close().finally(() => process.exit(0));
   });
 }
+```
