@@ -140,6 +140,19 @@ describe('Security Audit & Hardening Test Suite', () => {
       expect(JSON.stringify(json)).not.toContain(TOKEN);
     });
 
+    it('/api/auth/diagnostics returns safe metadata and no secrets', async () => {
+      const res = await req('/api/auth/diagnostics');
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.appOrigin).toBe('http://app.test');
+      expect(json.google.hasConfig).toBe(true);
+      expect(json.google.redirectUri).toContain('/api/auth/google/callback');
+      expect(json.github.hasConfig).toBe(true);
+      expect(json.github.redirectUri).toContain('/api/auth/github/callback');
+      expect(JSON.stringify(json)).not.toContain('test-google-secret');
+      expect(JSON.stringify(json)).not.toContain('test-gh-secret');
+    });
+
     it('/api/me returns { user: null } without crashing or leaking state when unauthenticated', async () => {
       const res = await req('/api/me');
       expect(res.status).toBe(200);

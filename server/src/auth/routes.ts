@@ -34,6 +34,22 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
     dev: !config.production && !!config.devGithubToken,
   }));
 
+  app.get('/api/auth/diagnostics', async () => ({
+    appOrigin: config.appOrigin,
+    originSource: config.appOriginSource,
+    google: {
+      hasConfig: Boolean(config.google.clientId && config.google.clientSecret),
+      redirectUri: callbackUrl('google'),
+      clientIdPrefix: config.google.clientId ? config.google.clientId.substring(0, 15) + '...' : null,
+      clientIdSuffix: config.google.clientId ? '...' + config.google.clientId.slice(-25) : null,
+    },
+    github: {
+      hasConfig: Boolean(config.github.clientId && config.github.clientSecret),
+      redirectUri: callbackUrl('github'),
+      clientIdPrefix: config.github.clientId ? config.github.clientId.substring(0, 8) + '...' : null,
+    },
+  }));
+
   app.get('/api/me', async (request) => {
     const user = store.userFromRequest(request);
     if (!user) return { user: null };
@@ -68,6 +84,16 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   // --- GitHub OAuth -------------------------------------------------------
   app.get<{ Querystring: { intent?: string; next?: string } }>('/api/auth/github/start', async (request, reply) => {
     checkAuthRateLimit(request, reply);
+    request.log.info(
+      {
+        provider: 'github',
+        redirectUri: callbackUrl('github'),
+        appOrigin: config.appOrigin,
+        originSource: config.appOriginSource,
+        hasConfig: Boolean(config.github.clientId && config.github.clientSecret),
+      },
+      'GitHub OAuth start initiated',
+    );
     if (!config.github.clientId || !config.github.clientSecret) return failRedirect(reply, 'github_not_configured');
     const user = store.userFromRequest(request);
     const intent = request.query.intent === 'connect' && user ? 'connect' : 'signin';
@@ -84,6 +110,16 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   app.get<{ Querystring: { code?: string; state?: string; error?: string } }>('/api/auth/github/callback', async (request, reply) => {
     checkAuthRateLimit(request, reply);
     const { code, state, error } = request.query;
+    request.log.info(
+      {
+        provider: 'github',
+        redirectUri: callbackUrl('github'),
+        hasCode: Boolean(code),
+        hasState: Boolean(state),
+        hasError: Boolean(error),
+      },
+      'GitHub OAuth callback received',
+    );
     if (error) return failRedirect(reply, error === 'access_denied' ? 'github_denied' : 'oauth_failed');
     const saved = state ? store.consumeState(state, 'github') : null;
     if (!code || !saved) return failRedirect(reply, 'oauth_state');
@@ -122,6 +158,16 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   // --- Google OpenID Connect ----------------------------------------------
   app.get<{ Querystring: { next?: string } }>('/api/auth/google/start', async (request, reply) => {
     checkAuthRateLimit(request, reply);
+    request.log.info(
+      {
+        provider: 'google',
+        redirectUri: callbackUrl('google'),
+        appOrigin: config.appOrigin,
+        originSource: config.appOriginSource,
+        hasConfig: Boolean(config.google.clientId && config.google.clientSecret),
+      },
+      'Google OAuth start initiated',
+    );
     if (!config.google.clientId || !config.google.clientSecret) return failRedirect(reply, 'google_not_configured');
     const nonce = randomId();
     const state = store.saveState({ provider: 'google', intent: 'signin', nonce, next: safeNext(request.query.next) });
@@ -139,6 +185,16 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, store: 
   app.get<{ Querystring: { code?: string; state?: string; error?: string } }>('/api/auth/google/callback', async (request, reply) => {
     checkAuthRateLimit(request, reply);
     const { code, state, error } = request.query;
+    request.log.info(
+      {
+        provider: 'google',
+        redirectUri: callbackUrl('google'),
+        hasCode: Boolean(code),
+        hasState: Boolean(state),
+        hasError: Boolean(error),
+      },
+      'Google OAuth callback received',
+    );
     if (error) return failRedirect(reply, 'oauth_failed');
     const saved = state ? store.consumeState(state, 'google') : null;
     if (!code || !saved) return failRedirect(reply, 'oauth_state');

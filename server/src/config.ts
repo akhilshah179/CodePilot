@@ -8,6 +8,7 @@ export interface Config {
   production: boolean;
   /** Public origin of the web app (OAuth callbacks go through it; the dev server proxies /api). */
   appOrigin: string;
+  appOriginSource: 'override' | 'APP_ORIGIN' | 'RENDER_EXTERNAL_URL' | 'default';
   dataDir: string;
   github: { clientId?: string; clientSecret?: string; apiUrl: string; webUrl: string; oauthUrl: string; callbackUrl: string };
   google: { clientId?: string; clientSecret?: string; callbackUrl: string };
@@ -114,10 +115,18 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
   const host = rawHost ?? defaultHost;
 
   let rawOrigin = overrides.appOrigin ?? env.APP_ORIGIN;
-  if (isRender && (!rawOrigin || rawOrigin.includes('localhost') || rawOrigin.includes('127.0.0.1'))) {
-    // Prevent accidental localhost origin from a .env file on Render
-    rawOrigin = env.RENDER_EXTERNAL_URL ?? rawOrigin;
+  let appOriginSource: Config['appOriginSource'];
+  if (overrides.appOrigin) {
+    appOriginSource = 'override';
+  } else if (isRender && (!env.APP_ORIGIN || env.APP_ORIGIN.includes('localhost') || env.APP_ORIGIN.includes('127.0.0.1')) && env.RENDER_EXTERNAL_URL) {
+    rawOrigin = env.RENDER_EXTERNAL_URL;
+    appOriginSource = 'RENDER_EXTERNAL_URL';
+  } else if (env.APP_ORIGIN) {
+    appOriginSource = 'APP_ORIGIN';
+  } else {
+    appOriginSource = 'default';
   }
+
   let appOrigin: string;
   if (rawOrigin && rawOrigin.trim()) {
     const trimmed = rawOrigin.trim();
@@ -151,6 +160,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
   return {
     production,
     appOrigin,
+    appOriginSource,
     dataDir,
     github: {
       clientId: overrides.github?.clientId ?? githubClientId,
