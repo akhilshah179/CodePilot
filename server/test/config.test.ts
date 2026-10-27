@@ -10,7 +10,15 @@ describe('Configuration & Port/Host Binding for Render and Local', () => {
     delete process.env.PORT;
     delete process.env.HOST;
     delete process.env.RENDER;
+    delete process.env.RENDER_EXTERNAL_URL;
     delete process.env.NODE_ENV;
+    delete process.env.APP_ORIGIN;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+    delete process.env.GOOGLE_CALLBACK_URL;
+    delete process.env.GITHUB_CLIENT_ID;
+    delete process.env.GITHUB_CLIENT_SECRET;
+    delete process.env.GITHUB_CALLBACK_URL;
   });
 
   afterEach(() => {
@@ -108,6 +116,54 @@ describe('Configuration & Port/Host Binding for Render and Local', () => {
 
       process.env.PORT = '99999';
       expect(() => loadConfig({ tokenKey: dummyTokenKey })).toThrow(/Invalid port: "99999"/);
+    });
+  });
+
+  describe('OAuth & Callback URL configuration', () => {
+    it('generates exact production callback URLs based on APP_ORIGIN', () => {
+      process.env.APP_ORIGIN = 'https://codepilot-api-0ern.onrender.com';
+      const config = loadConfig();
+      expect(config.appOrigin).toBe('https://codepilot-api-0ern.onrender.com');
+      expect(config.google.callbackUrl).toBe('https://codepilot-api-0ern.onrender.com/api/auth/google/callback');
+      expect(config.github.callbackUrl).toBe('https://codepilot-api-0ern.onrender.com/api/auth/github/callback');
+    });
+
+    it('normalizes APP_ORIGIN with trailing slash or whitespace', () => {
+      process.env.APP_ORIGIN = '  https://codepilot-api-0ern.onrender.com/   ';
+      const config = loadConfig();
+      expect(config.appOrigin).toBe('https://codepilot-api-0ern.onrender.com');
+      expect(config.google.callbackUrl).toBe('https://codepilot-api-0ern.onrender.com/api/auth/google/callback');
+      expect(config.github.callbackUrl).toBe('https://codepilot-api-0ern.onrender.com/api/auth/github/callback');
+    });
+
+    it('infers APP_ORIGIN from RENDER_EXTERNAL_URL when on Render and APP_ORIGIN is unset or localhost', () => {
+      process.env.RENDER = 'true';
+      process.env.RENDER_EXTERNAL_URL = 'https://codepilot-api-0ern.onrender.com';
+      delete process.env.APP_ORIGIN;
+      const config = loadConfig({ tokenKey: dummyTokenKey });
+      expect(config.appOrigin).toBe('https://codepilot-api-0ern.onrender.com');
+      expect(config.google.callbackUrl).toBe('https://codepilot-api-0ern.onrender.com/api/auth/google/callback');
+    });
+
+    it('allows explicit GOOGLE_CALLBACK_URL and GITHUB_CALLBACK_URL overrides', () => {
+      process.env.APP_ORIGIN = 'https://codepilot-api-0ern.onrender.com';
+      process.env.GOOGLE_CALLBACK_URL = 'https://custom.domain.com/api/auth/google/callback';
+      process.env.GITHUB_CALLBACK_URL = 'https://custom.domain.com/api/auth/github/callback';
+      const config = loadConfig();
+      expect(config.google.callbackUrl).toBe('https://custom.domain.com/api/auth/google/callback');
+      expect(config.github.callbackUrl).toBe('https://custom.domain.com/api/auth/github/callback');
+    });
+
+    it('throws when only one of GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is provided', () => {
+      process.env.GOOGLE_CLIENT_ID = 'test-id';
+      process.env.GOOGLE_CLIENT_SECRET = '';
+      expect(() => loadConfig()).toThrow(/Both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured/);
+    });
+
+    it('throws when only one of GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET is provided', () => {
+      process.env.GITHUB_CLIENT_ID = 'test-id';
+      process.env.GITHUB_CLIENT_SECRET = '';
+      expect(() => loadConfig()).toThrow(/Both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be configured/);
     });
   });
 });

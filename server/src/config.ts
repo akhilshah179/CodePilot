@@ -9,8 +9,8 @@ export interface Config {
   /** Public origin of the web app (OAuth callbacks go through it; the dev server proxies /api). */
   appOrigin: string;
   dataDir: string;
-  github: { clientId?: string; clientSecret?: string; apiUrl: string; webUrl: string; oauthUrl: string };
-  google: { clientId?: string; clientSecret?: string };
+  github: { clientId?: string; clientSecret?: string; apiUrl: string; webUrl: string; oauthUrl: string; callbackUrl: string };
+  google: { clientId?: string; clientSecret?: string; callbackUrl: string };
   /** 32-byte key used to encrypt OAuth tokens at rest. */
   tokenKey: Buffer;
   /** Development-only: sign in with a personal access token from the environment. */
@@ -58,7 +58,13 @@ export function parsePort(value: unknown, defaultPort = 8787): number {
   return num;
 }
 
-export function loadConfig(overrides: Partial<Config> = {}): Config {
+export interface ConfigOverrides extends Partial<Omit<Config, 'github' | 'google' | 'collective'>> {
+  github?: Partial<Config['github']>;
+  google?: Partial<Config['google']>;
+  collective?: Partial<Config['collective']>;
+}
+
+export function loadConfig(overrides: ConfigOverrides = {}): Config {
   const repoRoot = path.resolve(import.meta.dirname, '../..');
   loadDotEnv(path.join(repoRoot, '.env'));
   const env = process.env;
@@ -107,39 +113,72 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   }
   const host = rawHost ?? defaultHost;
 
+  let rawOrigin = overrides.appOrigin ?? env.APP_ORIGIN;
+  if (isRender && (!rawOrigin || rawOrigin.includes('localhost') || rawOrigin.includes('127.0.0.1'))) {
+    // Prevent accidental localhost origin from a .env file on Render
+    rawOrigin = env.RENDER_EXTERNAL_URL ?? rawOrigin;
+  }
+  let appOrigin: string;
+  if (rawOrigin && rawOrigin.trim()) {
+    const trimmed = rawOrigin.trim();
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`Invalid protocol ${parsed.protocol}`);
+      }
+      appOrigin = parsed.origin;
+    } catch {
+      appOrigin = trimmed.replace(/\/+$/, '');
+    }
+  } else {
+    appOrigin = 'http://localhost:5175';
+  }
+
+  const githubClientId = overrides.github?.clientId ?? (env.GITHUB_CLIENT_ID?.trim() || undefined);
+  const githubClientSecret = overrides.github?.clientSecret ?? (env.GITHUB_CLIENT_SECRET?.trim() || undefined);
+  if ((githubClientId && !githubClientSecret) || (!githubClientId && githubClientSecret)) {
+    throw new Error('Both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be configured together.');
+  }
+  const githubCallbackUrl = (overrides.github?.callbackUrl ?? env.GITHUB_CALLBACK_URL?.trim() ?? `${appOrigin}/api/auth/github/callback`).replace(/\/+$/, '');
+
+  const googleClientId = overrides.google?.clientId ?? (env.GOOGLE_CLIENT_ID?.trim() || undefined);
+  const googleClientSecret = overrides.google?.clientSecret ?? (env.GOOGLE_CLIENT_SECRET?.trim() || undefined);
+  if ((googleClientId && !googleClientSecret) || (!googleClientId && googleClientSecret)) {
+    throw new Error('Both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured together.');
+  }
+  const googleCallbackUrl = (overrides.google?.callbackUrl ?? env.GOOGLE_CALLBACK_URL?.trim() ?? `${appOrigin}/api/auth/google/callback`).replace(/\/+$/, '');
+
   return {
     production,
-    appOrigin: (overrides.appOrigin ?? env.APP_ORIGIN ?? 'http://localhost:5175').replace(/\/$/, ''),
+    appOrigin,
     dataDir,
     github: {
-      clientId: env.GITHUB_CLIENT_ID || undefined,
-      clientSecret: env.GITHUB_CLIENT_SECRET || undefined,
-      apiUrl: (env.GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
-      webUrl: (env.GITHUB_WEB_URL ?? 'https://github.com').replace(/\/$/, ''),
-      oauthUrl: (env.GITHUB_OAUTH_URL ?? 'https://github.com').replace(/\/$/, ''),
-      ...overrides.github,
+      clientId: overrides.github?.clientId ?? githubClientId,
+      clientSecret: overrides.github?.clientSecret ?? githubClientSecret,
+      apiUrl: overrides.github?.apiUrl ?? (env.GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
+      webUrl: overrides.github?.webUrl ?? (env.GITHUB_WEB_URL ?? 'https://github.com').replace(/\/$/, ''),
+      oauthUrl: overrides.github?.oauthUrl ?? (env.GITHUB_OAUTH_URL ?? 'https://github.com').replace(/\/$/, ''),
+      callbackUrl: overrides.github?.callbackUrl ?? githubCallbackUrl,
     },
     google: {
-      clientId: env.GOOGLE_CLIENT_ID || undefined,
-      clientSecret: env.GOOGLE_CLIENT_SECRET || undefined,
-      ...overrides.google,
+      clientId: overrides.google?.clientId ?? googleClientId,
+      clientSecret: overrides.google?.clientSecret ?? googleClientSecret,
+      callbackUrl: overrides.google?.callbackUrl ?? googleCallbackUrl,
     },
     tokenKey,
-    devGithubToken,
-    maxRepoSizeMb: Number(env.MAX_REPO_SIZE_MB ?? 1024),
-    cloneTimeoutMs: Number(env.CLONE_TIMEOUT_MS ?? 5 * 60_000),
-    analysisConcurrency: Number(env.ANALYSIS_CONCURRENCY ?? 2),
+    devGithubToken: overrides.devGithubToken !== undefined ? overrides.devGithubToken : devGithubToken,
+    maxRepoSizeMb: overrides.maxRepoSizeMb ?? Number(env.MAX_REPO_SIZE_MB ?? 1024),
+    cloneTimeoutMs: overrides.cloneTimeoutMs ?? Number(env.CLONE_TIMEOUT_MS ?? 5 * 60_000),
+    analysisConcurrency: overrides.analysisConcurrency ?? Number(env.ANALYSIS_CONCURRENCY ?? 2),
     sampleRoot: overrides.sampleRoot !== undefined ? overrides.sampleRoot : (env.SAMPLE_DISABLED === '1' ? undefined : repoRoot),
     webDist: overrides.webDist ?? path.join(repoRoot, 'web/dist'),
     collective: {
       // Privacy floors: configuration can raise the thresholds, never lower them below these.
-      minN: Math.max(10, Number(env.COLLECTIVE_MIN_N ?? 20) || 20),
-      minCell: Math.max(3, Number(env.COLLECTIVE_MIN_CELL ?? 5) || 5),
-      reviewers: (env.COLLECTIVE_REVIEWERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-      dbFile: 'collective.sqlite',
-      ...overrides.collective,
+      minN: overrides.collective?.minN ?? Math.max(10, Number(env.COLLECTIVE_MIN_N ?? 20) || 20),
+      minCell: overrides.collective?.minCell ?? Math.max(3, Number(env.COLLECTIVE_MIN_CELL ?? 5) || 5),
+      reviewers: overrides.collective?.reviewers ?? (env.COLLECTIVE_REVIEWERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+      dbFile: overrides.collective?.dbFile ?? 'collective.sqlite',
     },
-    ...overrides,
     port,
     host,
   };

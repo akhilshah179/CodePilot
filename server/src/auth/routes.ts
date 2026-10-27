@@ -19,7 +19,7 @@ export function safeNext(next: unknown): string | undefined {
 }
 
 export function registerAuthRoutes(app: FastifyInstance, config: Config, store: AuthStore, rateLimiter?: RateLimiter, codeStore?: { collectGarbage(): void }) {
-  const callbackUrl = (provider: string) => `${config.appOrigin}/api/auth/${provider}/callback`;
+  const callbackUrl = (provider: 'github' | 'google') => (provider === 'google' ? config.google.callbackUrl : config.github.callbackUrl);
   const failRedirect = (reply: FastifyReply, code: string) => reply.redirect(`${config.appOrigin}/signin?error=${encodeURIComponent(code)}`);
 
   const checkAuthRateLimit = (request: FastifyRequest, reply: FastifyReply) => {
